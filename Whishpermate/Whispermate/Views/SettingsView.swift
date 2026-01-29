@@ -261,6 +261,50 @@ struct SettingsView: View {
                 }
             }
 
+            // Sound Feedback
+            SettingsCard {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sound Feedback")
+                            .font(.system(size: 13))
+                        Text("Play sounds when recording starts and stops")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { SoundFeedbackManager.shared.isEnabled },
+                        set: { SoundFeedbackManager.shared.isEnabled = $0 }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                }
+            }
+
+            // Debug Logging
+            SettingsCard {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Debug Logging")
+                            .font(.system(size: 13))
+                        Text("Save detailed logs for troubleshooting")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { DebugLog.isFileLoggingEnabled },
+                        set: { DebugLog.isFileLoggingEnabled = $0 }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                }
+            }
+
             // Language Selection
             SettingsCard {
                 VStack(alignment: .leading, spacing: 12) {

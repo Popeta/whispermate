@@ -7,6 +7,10 @@ class SileroVAD {
     private var model: MLModel?
     private let modelURL: URL
 
+    // Timeout and limits for VAD analysis
+    private static let vadTimeoutSeconds: TimeInterval = 10.0
+    private static let maxSamplesForAnalysis: Int = 16000 * 60 // 1 minute at 16kHz
+
     init() {
         // Model is in Resources/Models directory
         let bundle = Bundle.main
@@ -75,6 +79,30 @@ class SileroVAD {
 
     /// Analyze audio file for speech
     func analyzeAudio(url: URL, threshold: Float = 0.3) async throws -> Bool {
+        // Run the analysis with a timeout
+        return try await withThrowingTaskGroup(of: Bool.self) { group in
+            // Analysis task
+            group.addTask {
+                try await self.performAnalysis(url: url, threshold: threshold)
+            }
+
+            // Timeout task
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(Self.vadTimeoutSeconds * 1_000_000_000))
+                throw VADError.timeout
+            }
+
+            // Return first completed result, cancel the other
+            guard let result = try await group.next() else {
+                throw VADError.timeout
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    /// Internal analysis implementation
+    private func performAnalysis(url: URL, threshold: Float) async throws -> Bool {
         // Ensure model is loaded
         if model == nil {
             await loadModel()
@@ -85,7 +113,13 @@ class SileroVAD {
         }
 
         // Load and convert audio to 16kHz mono
-        let samples = try loadAudio(url: url)
+        var samples = try loadAudio(url: url)
+
+        // Limit samples to prevent long processing times
+        if samples.count > Self.maxSamplesForAnalysis {
+            DebugLog.info("Limiting VAD analysis from \(samples.count) to \(Self.maxSamplesForAnalysis) samples", context: "SileroVAD")
+            samples = Array(samples.prefix(Self.maxSamplesForAnalysis))
+        }
 
         // Process in chunks
         let chunkSize = 576  // Silero VAD v6 expects 576 samples
@@ -104,6 +138,9 @@ class SileroVAD {
         }
 
         for i in stride(from: 0, to: samples.count, by: chunkSize) {
+            // Check for cancellation periodically
+            try Task.checkCancellation()
+
             let end = min(i + chunkSize, samples.count)
             var chunk = Array(samples[i..<end])
 

@@ -74,6 +74,9 @@ class AudioRecorder: NSObject, ObservableObject {
                 self.isRecording = true
             }
 
+            // Play recording start sound
+            SoundFeedbackManager.shared.playRecordingStartSound()
+
             DebugLog.info("startRecording success - isRecording after: \(isRecording)", context: "AudioRecorder LOG")
         } catch {
             DebugLog.info("Failed to start recording: \(error)", context: "AudioRecorder LOG")
@@ -141,6 +144,9 @@ class AudioRecorder: NSObject, ObservableObject {
         if shouldMuteAudio {
             volumeManager.restoreVolume()
         }
+
+        // Play recording stop sound (processing begins)
+        SoundFeedbackManager.shared.playRecordingStopSound()
 
         // Update UI state on main thread
         DispatchQueue.main.async {

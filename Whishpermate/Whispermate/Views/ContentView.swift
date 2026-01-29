@@ -550,6 +550,7 @@ struct ContentView: View {
     }
 
     private func startRecording() {
+        DebugLog.pipeline("Recording started")
         DebugLog.info("🎬 ========== START RECORDING ==========", context: "ContentView")
         errorMessage = ""
         transcription = ""
@@ -613,7 +614,9 @@ struct ContentView: View {
 
         // Stop recording and get audio file
         guard let audioURL = audioRecorder.stopRecording() else {
+            DebugLog.pipeline("ERROR: Failed to save recording")
             DebugLog.info("stopRecordingAndTranscribe: failed to get audio URL", context: "ContentView")
+            SoundFeedbackManager.shared.playErrorSound()
             errorMessage = "Failed to save recording"
             if overlayManager.isOverlayMode {
                 overlayManager.updateState(isRecording: false, isProcessing: false)
@@ -621,13 +624,17 @@ struct ContentView: View {
             return
         }
 
+        // Log recording stopped with duration and file info
+        let duration = recordingStartTime.map { String(format: "%.1fs", Date().timeIntervalSince($0)) } ?? "unknown"
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
+        DebugLog.pipeline("Recording stopped, duration: \(duration), file: \(fileSize / 1024)kb")
         DebugLog.info("stopRecordingAndTranscribe: got audio URL: \(audioURL)", context: "ContentView")
 
         // Check if audio file exists and has content
         do {
             let fileAttributes = try FileManager.default.attributesOfItem(atPath: audioURL.path)
-            let fileSize = fileAttributes[.size] as? Int64 ?? 0
-            DebugLog.info("Audio file size: \(fileSize) bytes", context: "ContentView")
+            let fileSizeCheck = fileAttributes[.size] as? Int64 ?? 0
+            DebugLog.info("Audio file size: \(fileSizeCheck) bytes", context: "ContentView")
 
             if fileSize < 1000 { // Less than 1KB (essentially empty)
                 DebugLog.info("Audio file too small (\(fileSize) bytes), skipping transcription", context: "ContentView")
@@ -652,7 +659,9 @@ struct ContentView: View {
 
         // VAD Gatekeeper: Check for speech before making HTTP request
         if vadSettingsManager.vadEnabled {
+            DebugLog.pipeline("VAD started")
             DebugLog.info("🎤 VAD enabled - analyzing audio for speech...", context: "ContentView")
+            let vadStartTime = Date()
 
             // Show brief processing state during VAD analysis
             isProcessing = true
@@ -666,9 +675,11 @@ struct ContentView: View {
                         in: audioURL,
                         settings: vadSettingsManager
                     )
+                    let vadDuration = String(format: "%.1fs", Date().timeIntervalSince(vadStartTime))
 
                     await MainActor.run {
                         if !hasSpeech {
+                            DebugLog.pipeline("VAD completed: speech=false (\(vadDuration))")
                             DebugLog.info("🔇 No speech detected - skipping transcription", context: "ContentView")
                             errorMessage = "No speech detected"
                             shouldAutoPaste = false
@@ -683,11 +694,14 @@ struct ContentView: View {
                             return
                         }
 
+                        DebugLog.pipeline("VAD completed: speech=true (\(vadDuration))")
                         DebugLog.info("✅ Speech detected - proceeding with transcription", context: "ContentView")
                         // Continue with transcription
                         continueWithTranscription(audioURL: audioURL)
                     }
                 } catch {
+                    let vadDuration = String(format: "%.1fs", Date().timeIntervalSince(vadStartTime))
+                    DebugLog.pipeline("VAD error (\(vadDuration)): \(error.localizedDescription)")
                     DebugLog.info("⚠️ VAD error: \(error.localizedDescription), proceeding with transcription anyway", context: "ContentView")
                     await MainActor.run {
                         // If VAD fails, continue with transcription rather than blocking
@@ -759,10 +773,14 @@ struct ContentView: View {
             overlayManager.updateState(isRecording: false, isProcessing: true)
         }
 
+        let apiStartTime = Date()
+        let hasLLMFormatting = !promptComponents.isEmpty && llmApiKey != nil
+
         Task {
             do {
                 let languageCode = languageManager.apiLanguageCode
 
+                DebugLog.pipeline("Transcription API started")
                 DebugLog.info("Calling transcription API...", context: "ContentView")
                 DebugLog.info("Provider: \(transcriptionProviderManager.selectedProvider.displayName)", context: "ContentView")
                 DebugLog.info("Endpoint: \(transcriptionProviderManager.effectiveEndpoint)", context: "ContentView")
@@ -793,6 +811,12 @@ struct ContentView: View {
                     llmApiKey: llmApiKey
                 )
 
+                let apiDuration = String(format: "%.1fs", Date().timeIntervalSince(apiStartTime))
+                let preview = result.prefix(50).replacingOccurrences(of: "\n", with: " ")
+                DebugLog.pipeline("Transcription API completed (\(apiDuration)): \"\(preview)...\"")
+                if hasLLMFormatting {
+                    DebugLog.pipeline("LLM formatting completed")
+                }
                 DebugLog.sensitive("Transcription received: \(result)", context: "ContentView")
 
                 await MainActor.run {
@@ -814,6 +838,7 @@ struct ContentView: View {
 
                     // Auto-paste if triggered by hotkey (but not during onboarding)
                     if shouldAutoPaste && !onboardingManager.showOnboarding {
+                        DebugLog.pipeline("Auto-paste started")
                         DebugLog.info("Auto-pasting transcription result", context: "ContentView")
                         shouldAutoPaste = false
 
@@ -827,7 +852,9 @@ struct ContentView: View {
                             DebugLog.info("Post-paste permission check: \(trusted)", context: "ContentView")
 
                             if !trusted {
+                                DebugLog.pipeline("Auto-paste failed: Accessibility permission not granted")
                                 DebugLog.info("⚠️ Paste may have failed - accessibility permission not granted", context: "ContentView")
+                                SoundFeedbackManager.shared.playErrorSound()
 
                                 // Show alert to help user enable permission
                                 let alert = NSAlert()
@@ -843,14 +870,23 @@ struct ContentView: View {
                                         NSWorkspace.shared.open(url)
                                     }
                                 }
+                            } else {
+                                DebugLog.pipeline("Auto-paste completed")
+                                DebugLog.pipeline("DONE")
+                                SoundFeedbackManager.shared.playSuccessSound()
                             }
                         }
                     } else {
+                        DebugLog.pipeline("DONE (no auto-paste)")
+                        SoundFeedbackManager.shared.playSuccessSound()
                         DebugLog.info("Skipping auto-paste (shouldAutoPaste is false)", context: "ContentView")
                     }
                 }
             } catch {
+                let apiDuration = String(format: "%.1fs", Date().timeIntervalSince(apiStartTime))
+                DebugLog.pipeline("ERROR (\(apiDuration)): \(error.localizedDescription)")
                 DebugLog.info("Transcription error: \(error.localizedDescription)", context: "ContentView")
+                SoundFeedbackManager.shared.playErrorSound()
                 await MainActor.run {
                     transcription = ""
                     isProcessing = false

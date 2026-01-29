@@ -33,6 +33,7 @@ enum VADError: LocalizedError {
     case bufferAllocationFailed
     case bufferReadFailed
     case conversionError(Error)
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -46,6 +47,8 @@ enum VADError: LocalizedError {
             return "Failed to read audio buffer"
         case .conversionError(let error):
             return "Audio conversion error: \(error.localizedDescription)"
+        case .timeout:
+            return "VAD analysis timed out"
         }
     }
 }
