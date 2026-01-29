@@ -1,11 +1,130 @@
-- do not build dmg and tag unless i ask, commit periodically but don't bump the version
-- use HIG best practices as much as possible, don't design custom componets
-- be very conservative with versions, keep it in 0.0.6 unless explicitly told
-- The Release build needs hardened runtime and shouldn't include the get-task-allow entitlement.
-- when i say release new version it means
-1. bump patch version, unless told otherwise
-2. commit all code
-3. notarize
-4. build dmg
-5. only when dmg is released and working push everything to github, dmg, notarized app, etc
-6. make sure that the code in github and main are up to date to the latest release
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Обзор проекта
+
+**WhisperMate** — macOS приложение для голосовой транскрипции с глобальным hotkey, автопастой и AI-форматированием текста.
+
+- **Платформы:** macOS 13+ (основное), iOS 15+ (в разработке)
+- **Стек:** Swift 5.9, SwiftUI, AVFoundation, CoreML
+- **Версия:** 0.0.20 (держать в 0.0.x без явного запроса)
+
+## Команды разработки
+
+```bash
+# Открыть проект
+cd Whishpermate && open Whispermate.xcodeproj
+
+# Сборка из CLI
+xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Debug build
+
+# Release сборка
+xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Release build
+
+# Подпись и нотаризация (когда запрошен релиз)
+./sign-and-notarize.sh
+```
+
+## Структура проекта
+
+```
+whispermate/
+├── Whishpermate/                    # Xcode project root
+│   ├── Whispermate.xcodeproj
+│   ├── Whispermate/                 # macOS app (основное)
+│   │   ├── WhispermateApp.swift     # Entry point
+│   │   ├── Views/                   # SwiftUI views
+│   │   │   ├── ContentView.swift    # Главное окно (952 LOC)
+│   │   │   ├── SettingsView.swift   # Настройки (539 LOC)
+│   │   │   └── OnboardingView.swift # Пермиссии wizard
+│   │   ├── Services/                # Business logic (21 сервис)
+│   │   │   ├── AudioRecorder.swift  # AVAudioRecorder + AVAudioEngine
+│   │   │   ├── OpenAIClient.swift   # Unified API client
+│   │   │   ├── HotkeyManager.swift  # Global hotkey (event tap)
+│   │   │   └── ...
+│   │   └── Models/
+│   ├── WhisperMateShared/           # Shared framework (macOS + iOS)
+│   ├── WhisperMateKeyboard/         # iOS keyboard extension
+│   └── WhisperMateIOS/              # iOS app
+└── sign-and-notarize.sh
+```
+
+## Архитектура
+
+### Audio Pipeline
+```
+Hotkey press → AudioRecorder.startRecording()
+    → AVAudioRecorder (m4a file) + AVAudioEngine (visualization)
+    → VoiceActivityDetector (Silero VAD CoreML)
+    → OpenAIClient.transcribe() (Groq/OpenAI/Custom)
+    → TextFormattingManager (LLM tone/style)
+    → PasteHelper.copyAndPaste()
+    → HistoryManager.save()
+```
+
+### Ключевые Singletons
+- `HotkeyManager.shared` — глобальный хоткей
+- `OverlayWindowManager.shared` — floating UI при записи
+- `OnboardingManager.shared` — permission flow
+- `ToneStyleManager.shared` — per-app форматирование
+- `DictionaryManager.shared` — custom глоссарии
+
+### API Providers
+**Transcription:** Groq (whisper-large-v3-turbo), OpenAI (whisper-1), Custom endpoint
+**LLM:** Groq, OpenAI (gpt-4o), Anthropic (claude-3-5-sonnet), Custom
+
+### Хранилище
+- **Keychain** — API ключи (`KeychainHelper.swift`)
+- **UserDefaults** — настройки (provider, hotkey, UI state)
+- **JSON files** — история (`~/Library/Application Support/WhisperMate/`)
+
+## Правила проекта
+
+### Версионирование и релизы
+- **НЕ бампить версию** без явного запроса (держать 0.0.x)
+- **НЕ собирать DMG/tag** без явного запроса
+- **Коммитить периодически** по ходу работы
+
+### Release build требования
+- Hardened runtime: YES
+- **НЕ включать** entitlement `get-task-allow`
+- Code signing: Developer ID Application
+
+### Процесс релиза (когда явно запрошен)
+1. Bump patch версию
+2. Commit весь код
+3. Notarize приложение
+4. Build DMG
+5. Push на GitHub только когда DMG работает
+
+### UI/UX
+- Использовать **HIG best practices**
+- **НЕ создавать** кастомные компоненты без необходимости
+- Стандартные macOS контролы предпочтительнее
+
+## Entitlements
+
+```xml
+<!-- Whispermate.entitlements -->
+<key>com.apple.security.device.audio-input</key>    <!-- Микрофон -->
+<key>com.apple.security.network.client</key>         <!-- API calls -->
+<!-- Release: НЕ включать get-task-allow -->
+```
+
+## Permissions Flow (Onboarding)
+
+1. **Microphone** — `AVCaptureDevice.requestAccess(.audio)`
+2. **Accessibility** — `AXIsProcessTrusted()` для paste automation
+3. **Language** — выбор языка транскрипции
+4. **Hotkey** — настройка глобального хоткея
+
+## Secrets
+
+API ключи хранятся в Keychain. Для разработки можно использовать `Secrets.plist`:
+```xml
+<key>CUSTOM_TRANSCRIPTION_ENDPOINT</key>
+<string>https://api.example.com/transcribe</string>
+```
+
+**Secrets.plist в .gitignore** — никогда не коммитить.
