@@ -904,13 +904,14 @@ struct ContentView: View {
 
     private func resolvedTranscriptionApiKey() -> String? {
         let provider = transcriptionProviderManager.selectedProvider
-        if let storedKey = KeychainHelper.get(key: provider.apiKeyName), !storedKey.isEmpty {
-            DebugLog.sensitive("Using keychain transcription key for provider: \(provider.displayName)", context: "ContentView")
-            return storedKey
-        }
+        // Check Secrets.plist first to avoid Keychain password prompts in debug builds
         if let bundledKey = SecretsLoader.transcriptionKey(for: provider), !bundledKey.isEmpty {
             DebugLog.sensitive("Using bundled transcription key for provider: \(provider.displayName)", context: "ContentView")
             return bundledKey
+        }
+        if let storedKey = KeychainHelper.get(key: provider.apiKeyName), !storedKey.isEmpty {
+            DebugLog.sensitive("Using keychain transcription key for provider: \(provider.displayName)", context: "ContentView")
+            return storedKey
         }
         DebugLog.warning("No transcription key found for provider: \(provider.displayName)", context: "ContentView")
         return nil
@@ -918,13 +919,14 @@ struct ContentView: View {
 
     private func resolvedLLMApiKey() -> String? {
         let provider = llmProviderManager.selectedProvider
-        if let storedKey = KeychainHelper.get(key: provider.apiKeyName), !storedKey.isEmpty {
-            DebugLog.sensitive("Using keychain LLM key for provider: \(provider.displayName)", context: "ContentView")
-            return storedKey
-        }
+        // Check Secrets.plist first to avoid Keychain password prompts in debug builds
         if let bundledKey = SecretsLoader.llmKey(for: provider), !bundledKey.isEmpty {
             DebugLog.sensitive("Using bundled LLM key for provider: \(provider.displayName)", context: "ContentView")
             return bundledKey
+        }
+        if let storedKey = KeychainHelper.get(key: provider.apiKeyName), !storedKey.isEmpty {
+            DebugLog.sensitive("Using keychain LLM key for provider: \(provider.displayName)", context: "ContentView")
+            return storedKey
         }
         DebugLog.warning("No LLM key found for provider: \(provider.displayName)", context: "ContentView")
         return nil

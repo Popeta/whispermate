@@ -16,11 +16,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Открыть проект
 cd Whishpermate && open Whispermate.xcodeproj
 
-# Сборка из CLI
-xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Debug build
+# Debug сборка (ad-hoc подпись, без Keychain промптов)
+xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Debug \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build
 
 # Release сборка
 xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Release build
+
+# Установка Debug сборки
+cp -R ~/Library/Developer/Xcode/DerivedData/Whispermate-*/Build/Products/Debug/Whispermate.app ~/Applications/
 
 # Подпись и нотаризация (когда запрошен релиз)
 ./sign-and-notarize.sh
@@ -38,7 +42,7 @@ whispermate/
 │   │   │   ├── ContentView.swift    # Главное окно (952 LOC)
 │   │   │   ├── SettingsView.swift   # Настройки (539 LOC)
 │   │   │   └── OnboardingView.swift # Пермиссии wizard
-│   │   ├── Services/                # Business logic (21 сервис)
+│   │   ├── Services/                # Business logic (22 сервиса)
 │   │   │   ├── AudioRecorder.swift  # AVAudioRecorder + AVAudioEngine
 │   │   │   ├── OpenAIClient.swift   # Unified API client
 │   │   │   ├── HotkeyManager.swift  # Global hotkey (event tap)
@@ -121,10 +125,24 @@ Hotkey press → AudioRecorder.startRecording()
 
 ## Secrets
 
-API ключи хранятся в Keychain. Для разработки можно использовать `Secrets.plist`:
+API ключи загружаются в порядке: **Secrets.plist → Keychain**.
+
+Для разработки создать `Whishpermate/Whispermate/Secrets.plist`:
 ```xml
-<key>CUSTOM_TRANSCRIPTION_ENDPOINT</key>
-<string>https://api.example.com/transcribe</string>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>GroqTranscriptionKey</key>
+    <string>gsk_...</string>
+    <key>GroqLLMKey</key>
+    <string>gsk_...</string>
+    <key>CustomTranscriptionEndpoint</key>
+    <string>https://api.example.com/transcribe</string>
+</dict>
+</plist>
 ```
 
 **Secrets.plist в .gitignore** — никогда не коммитить.
+
+Это позволяет избежать Keychain промптов в debug-сборках.
