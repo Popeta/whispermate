@@ -104,8 +104,28 @@ class AudioRecorder: NSObject, ObservableObject {
         do {
             try engine.start()
             audioEngine = engine
+
+            // Handle audio route changes (e.g. WhatsApp call switches mic/speaker)
+            NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: engine,
+                queue: .main
+            ) { [weak self] _ in
+                DebugLog.info("⚠️ Audio configuration changed (route switch detected), restarting engine", context: "AudioRecorder LOG")
+                guard let self = self, let engine = self.audioEngine else { return }
+                if !engine.isRunning {
+                    do {
+                        try engine.start()
+                        DebugLog.info("✅ Audio engine restarted after route change", context: "AudioRecorder LOG")
+                    } catch {
+                        DebugLog.info("Failed to restart audio engine: \(error)", context: "AudioRecorder LOG")
+                    }
+                }
+            }
         } catch {
             DebugLog.info("Failed to start frequency analysis: \(error)", context: "AudioRecorder LOG")
+            // Clean up tap if engine failed to start
+            inputNode.removeTap(onBus: bus)
         }
     }
 
@@ -134,9 +154,12 @@ class AudioRecorder: NSObject, ObservableObject {
         // Stop audio recorder
         audioRecorder?.stop()
 
-        // Stop frequency analysis engine
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
+        // Stop frequency analysis engine and remove route change observer
+        if let engine = audioEngine {
+            NotificationCenter.default.removeObserver(self, name: .AVAudioEngineConfigurationChange, object: engine)
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
         audioEngine = nil
 
         // Restore system volume (if it was lowered)
@@ -170,10 +193,13 @@ class AudioRecorder: NSObject, ObservableObject {
         levelTimer = nil
         audioRecorder = nil
 
-        // Stop frequency analysis
-        if audioEngine?.isRunning == true {
-            audioEngine?.inputNode.removeTap(onBus: 0)
-            audioEngine?.stop()
+        // Stop frequency analysis and remove observers
+        if let engine = audioEngine {
+            NotificationCenter.default.removeObserver(self, name: .AVAudioEngineConfigurationChange, object: engine)
+            engine.inputNode.removeTap(onBus: 0)
+            if engine.isRunning {
+                engine.stop()
+            }
         }
         audioEngine = nil
 

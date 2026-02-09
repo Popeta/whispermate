@@ -90,9 +90,9 @@ class PasteHelper {
                 DebugLog.info("Delay complete, simulating paste...", context: "PasteHelper")
                 simulatePaste()
 
-                // Restore original clipboard content after a short delay
-                // Increased to 200ms to give web apps (Chrome, Firefox) time to process paste
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                // Restore original clipboard content after delay
+                // Using 1.0s to give heavy apps (Chrome, Slack, WhatsApp) time to process paste
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     if let original = originalContent {
                         pasteboard.clearContents()
                         pasteboard.setString(original, forType: .string)
@@ -106,9 +106,9 @@ class PasteHelper {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 simulatePaste()
 
-                // Restore original clipboard content after a short delay
-                // Increased to 200ms to give web apps (Chrome, Firefox) time to process paste
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                // Restore original clipboard content after delay
+                // Using 1.0s to give heavy apps (Chrome, Slack, WhatsApp) time to process paste
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     if let original = originalContent {
                         pasteboard.clearContents()
                         pasteboard.setString(original, forType: .string)

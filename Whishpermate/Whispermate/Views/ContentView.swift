@@ -57,6 +57,7 @@ struct ContentView: View {
     @StateObject private var vadSettingsManager = VADSettingsManager()
     @State private var transcription = ""
     @State private var isProcessing = false
+    @State private var processingStartTime: Date?
     @State private var showingAPIKeyAlert = false
     @State private var apiKey = ""
     @Environment(\.openWindow) private var openWindow
@@ -360,6 +361,13 @@ struct ContentView: View {
 
                 DebugLog.info("isRecording: \(audioRecorder.isRecording), isProcessing: \(isProcessing)", context: "ContentView")
 
+                // Auto-reset stuck isProcessing after 60 seconds
+                if isProcessing, let start = processingStartTime, Date().timeIntervalSince(start) > 60 {
+                    DebugLog.info("⚠️ isProcessing stuck for >60s, auto-resetting", context: "ContentView")
+                    isProcessing = false
+                    processingStartTime = nil
+                }
+
                 // Just start recording - don't change window visibility
                 // The app foreground/background state determines overlay vs main window
                 if !audioRecorder.isRecording && !isProcessing {
@@ -395,6 +403,13 @@ struct ContentView: View {
                 if onboardingManager.showOnboarding {
                     DebugLog.info("⚠️ Ignoring double-tap - onboarding in progress", context: "ContentView")
                     return
+                }
+
+                // Auto-reset stuck isProcessing after 60 seconds
+                if isProcessing, let start = processingStartTime, Date().timeIntervalSince(start) > 60 {
+                    DebugLog.info("⚠️ isProcessing stuck for >60s during double-tap, auto-resetting", context: "ContentView")
+                    isProcessing = false
+                    processingStartTime = nil
                 }
 
                 // Toggle continuous recording
@@ -665,6 +680,7 @@ struct ContentView: View {
 
             // Show brief processing state during VAD analysis
             isProcessing = true
+            processingStartTime = Date()
             if overlayManager.isOverlayMode {
                 overlayManager.updateState(isRecording: false, isProcessing: true)
             }
@@ -684,6 +700,7 @@ struct ContentView: View {
                             errorMessage = "No speech detected"
                             shouldAutoPaste = false
                             isProcessing = false
+                            processingStartTime = nil
 
                             if overlayManager.isOverlayMode {
                                 overlayManager.updateState(isRecording: false, isProcessing: false)
@@ -767,6 +784,7 @@ struct ContentView: View {
 
         DebugLog.info("continueWithTranscription: starting transcription, shouldAutoPaste: \(shouldAutoPaste)", context: "ContentView")
         isProcessing = true
+        processingStartTime = Date()
 
         // Update overlay - stopped recording, now processing (only if in overlay mode)
         if overlayManager.isOverlayMode {
@@ -822,11 +840,23 @@ struct ContentView: View {
                 await MainActor.run {
                     transcription = result
                     isProcessing = false
+                    processingStartTime = nil
                     errorMessage = ""
 
                     // Update overlay - processing complete (only if in overlay mode)
                     if overlayManager.isOverlayMode {
                         overlayManager.updateState(isRecording: false, isProcessing: false)
+                    }
+
+                    // Check for empty transcription
+                    let trimmedResult = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmedResult.isEmpty {
+                        DebugLog.pipeline("Empty transcription received - skipping paste")
+                        DebugLog.info("⚠️ Transcription result is empty, not pasting", context: "ContentView")
+                        errorMessage = "Could not recognize speech"
+                        shouldAutoPaste = false
+                        SoundFeedbackManager.shared.playErrorSound()
+                        return
                     }
 
                     // Calculate duration
@@ -890,6 +920,7 @@ struct ContentView: View {
                 await MainActor.run {
                     transcription = ""
                     isProcessing = false
+                    processingStartTime = nil
                     errorMessage = "Transcription failed: \(error.localizedDescription)"
                     shouldAutoPaste = false
 
