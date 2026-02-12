@@ -95,6 +95,8 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     private var bubbleView: CircularMicButtonView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var isBubbleAttached = false
+    private var bubbleVisibilityToken = 0L
+    private var bubbleShouldBeVisible = false
     private var commandActionsView: LinearLayout? = null
     private var commandActionsParams: WindowManager.LayoutParams? = null
     private var isCommandActionsAttached = false
@@ -144,6 +146,7 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     private fun refreshOverlayVisibility(source: AccessibilityNodeInfo?) {
         focusLossJob?.cancel()
         if (shouldShowBubble(source)) {
+            bubbleShouldBeVisible = true
             showBubble()
             updateCommandActionsVisibility(source)
             return
@@ -152,12 +155,14 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         focusLossJob = serviceScope.launch {
             delay(BUBBLE_VISIBILITY_DELAY_MS)
             if (!shouldShowBubble(null)) {
+                bubbleShouldBeVisible = false
                 if (recordingState == RecordingState.Recording) {
                     stopRecording(discard = true)
                 }
                 hideBubble(animated = true)
                 hideCommandActions(animated = true)
             } else {
+                bubbleShouldBeVisible = true
                 showBubble()
                 updateCommandActionsVisibility(null)
             }
@@ -209,6 +214,8 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         val bubble = bubbleView ?: return
         val params = bubbleParams ?: return
 
+        bubbleShouldBeVisible = true
+        val token = ++bubbleVisibilityToken
         bubble.animate().cancel()
         if (isBubbleAttached) {
             bubble.alpha = 1f
@@ -225,6 +232,10 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             bubble.animate()
                 .alpha(1f)
                 .setDuration(BUBBLE_ANIMATION_MS)
+                .withEndAction {
+                    if (token != bubbleVisibilityToken) return@withEndAction
+                    bubble.alpha = 1f
+                }
                 .start()
             updateBubbleUi()
         } catch (e: Exception) {
@@ -233,8 +244,10 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     }
 
     private fun hideBubble(animated: Boolean = true) {
+        bubbleShouldBeVisible = false
         if (!isBubbleAttached) return
         val bubble = bubbleView ?: return
+        val token = ++bubbleVisibilityToken
         bubble.animate().cancel()
 
         if (!animated) {
@@ -245,7 +258,14 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         bubble.animate()
             .alpha(0f)
             .setDuration(BUBBLE_ANIMATION_MS)
-            .withEndAction { removeBubbleView() }
+            .withEndAction {
+                if (token != bubbleVisibilityToken) return@withEndAction
+                if (bubbleShouldBeVisible || shouldShowBubble(null)) {
+                    showBubble()
+                    return@withEndAction
+                }
+                removeBubbleView()
+            }
             .start()
     }
 
