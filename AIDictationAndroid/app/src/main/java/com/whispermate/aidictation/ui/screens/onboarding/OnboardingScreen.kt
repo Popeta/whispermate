@@ -3,8 +3,8 @@ package com.whispermate.aidictation.ui.screens.onboarding
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
-import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
@@ -40,22 +39,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -63,37 +59,36 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.whispermate.aidictation.R
 import com.whispermate.aidictation.data.preferences.AppPreferences
-import com.whispermate.aidictation.ui.components.CircularMicButton
-import com.whispermate.aidictation.ui.components.MicButtonState
+import com.whispermate.aidictation.service.OverlayDictationAccessibilityService
 
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
     onSaveContextRules: (List<Boolean>) -> Unit = {}
 ) {
-    var currentStep by remember { mutableIntStateOf(0) }
-    var hasMicPermission by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var isKeyboardEnabled by remember { mutableStateOf(isKeyboardEnabled(context)) }
-    var isKeyboardSelected by remember { mutableStateOf(isKeyboardSelected(context)) }
-    var hasDictated by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Context rules enabled state
+    var currentStep by remember { mutableIntStateOf(0) }
+    var hasMicPermission by remember { mutableStateOf(hasMicrophonePermission(context)) }
+    var isOverlayServiceEnabled by remember { mutableStateOf(isOverlayAccessibilityEnabled(context)) }
+    var testInputText by remember { mutableStateOf("") }
+    val hasTestedDictation = testInputText.isNotBlank()
+
     val contextRulesEnabled = remember {
         AppPreferences.defaultContextRules.map { false }.toMutableStateList()
     }
 
-    // Check keyboard status when returning from settings
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isKeyboardEnabled = isKeyboardEnabled(context)
-                isKeyboardSelected = isKeyboardSelected(context)
+                hasMicPermission = hasMicrophonePermission(context)
+                isOverlayServiceEnabled = isOverlayAccessibilityEnabled(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -102,22 +97,11 @@ fun OnboardingScreen(
         }
     }
 
-    // Poll for keyboard selection changes when on keyboard step
-    LaunchedEffect(currentStep) {
-        if (currentStep == 3) {
-            while (true) {
-                delay(500)
-                isKeyboardEnabled = isKeyboardEnabled(context)
-                isKeyboardSelected = isKeyboardSelected(context)
-            }
-        }
-    }
-
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasMicPermission = isGranted
-        if (isGranted) {
+    ) { granted ->
+        hasMicPermission = granted
+        if (granted) {
             currentStep = 2
         }
     }
@@ -128,7 +112,6 @@ fun OnboardingScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Progress indicator (sticky at top)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -151,7 +134,6 @@ fun OnboardingScreen(
             }
         }
 
-        // Scrollable content area
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -166,18 +148,16 @@ fun OnboardingScreen(
             ) { step ->
                 when (step) {
                     0 -> WelcomeStep()
-                    1 -> MicrophonePermissionStep(hasMicPermission)
+                    1 -> MicrophonePermissionStep(hasPermission = hasMicPermission)
                     2 -> ContextRulesStep(
                         enabledStates = contextRulesEnabled,
                         onToggle = { index, enabled -> contextRulesEnabled[index] = enabled }
                     )
-                    3 -> KeyboardSetupStep(
-                        isKeyboardEnabled = isKeyboardEnabled,
-                        isKeyboardSelected = isKeyboardSelected,
-                        hasDictated = hasDictated,
-                        onTextChanged = { text -> hasDictated = text.isNotBlank() },
-                        onOpenSettings = { openKeyboardSettings(context) },
-                        onSelectKeyboard = { showKeyboardPicker(context) }
+                    3 -> OverlaySetupStep(
+                        isEnabled = isOverlayServiceEnabled,
+                        testInputText = testInputText,
+                        onTestInputChanged = { testInputText = it },
+                        onOpenSettings = { openAccessibilitySettings(context) }
                     )
                 }
             }
@@ -185,7 +165,6 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Bottom button (sticky at bottom)
         Button(
             onClick = {
                 when (currentStep) {
@@ -202,11 +181,10 @@ fun OnboardingScreen(
                         currentStep = 3
                     }
                     3 -> {
-                        when {
-                            !isKeyboardEnabled -> openKeyboardSettings(context)
-                            !isKeyboardSelected -> showKeyboardPicker(context)
-                            hasDictated -> onComplete()
-                            // If keyboard selected but not dictated, do nothing (button disabled)
+                        if (!isOverlayServiceEnabled) {
+                            openAccessibilitySettings(context)
+                        } else if (hasTestedDictation) {
+                            onComplete()
                         }
                     }
                 }
@@ -214,7 +192,7 @@ fun OnboardingScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            enabled = currentStep != 3 || !isKeyboardEnabled || !isKeyboardSelected || hasDictated,
+            enabled = currentStep != 3 || !isOverlayServiceEnabled || hasTestedDictation,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
@@ -222,14 +200,16 @@ fun OnboardingScreen(
             Text(
                 text = when (currentStep) {
                     0 -> stringResource(R.string.onboarding_continue)
-                    1 -> if (hasMicPermission) stringResource(R.string.onboarding_continue)
-                    else stringResource(R.string.onboarding_mic_enable)
+                    1 -> if (hasMicPermission) {
+                        stringResource(R.string.onboarding_continue)
+                    } else {
+                        stringResource(R.string.onboarding_mic_enable)
+                    }
                     2 -> stringResource(R.string.onboarding_continue)
                     3 -> when {
-                        !isKeyboardEnabled -> stringResource(R.string.onboarding_open_settings)
-                        !isKeyboardSelected -> "Select Keyboard"
-                        hasDictated -> stringResource(R.string.onboarding_get_started)
-                        else -> "Try dictation first"
+                        !isOverlayServiceEnabled -> stringResource(R.string.onboarding_open_settings)
+                        hasTestedDictation -> stringResource(R.string.onboarding_get_started)
+                        else -> stringResource(R.string.onboarding_try_dictation)
                     }
                     else -> ""
                 },
@@ -244,7 +224,6 @@ private fun WelcomeStep() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // App icon placeholder
         Box(
             modifier = Modifier
                 .size(72.dp)
@@ -280,7 +259,6 @@ private fun WelcomeStep() {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Features
         FeatureItem(
             icon = Icons.Default.Translate,
             text = stringResource(R.string.onboarding_feature_1)
@@ -339,26 +317,6 @@ private fun MicrophonePermissionStep(hasPermission: Boolean) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
-
-        if (hasPermission) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Permission granted",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
     }
 }
 
@@ -444,24 +402,12 @@ private fun ContextRulesStep(
 }
 
 @Composable
-private fun KeyboardSetupStep(
-    isKeyboardEnabled: Boolean,
-    isKeyboardSelected: Boolean,
-    hasDictated: Boolean,
-    onTextChanged: (String) -> Unit,
-    onOpenSettings: () -> Unit,
-    onSelectKeyboard: () -> Unit
+private fun OverlaySetupStep(
+    isEnabled: Boolean,
+    testInputText: String,
+    onTestInputChanged: (String) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    var testText by remember { mutableStateOf("") }
-    val focusRequester = remember { FocusRequester() }
-
-    // Auto-focus when keyboard becomes selected
-    LaunchedEffect(isKeyboardSelected) {
-        if (isKeyboardSelected) {
-            focusRequester.requestFocus()
-        }
-    }
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -470,16 +416,16 @@ private fun KeyboardSetupStep(
                 .size(72.dp)
                 .clip(CircleShape)
                 .background(
-                    if (hasDictated) MaterialTheme.colorScheme.primaryContainer
+                    if (isEnabled) MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.secondaryContainer
                 ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (hasDictated) Icons.Default.Check else Icons.Default.Keyboard,
+                imageVector = if (isEnabled) Icons.Default.Check else Icons.Default.Security,
                 contentDescription = null,
                 modifier = Modifier.size(36.dp),
-                tint = if (hasDictated) MaterialTheme.colorScheme.primary
+                tint = if (isEnabled) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.secondary
             )
         }
@@ -487,7 +433,7 @@ private fun KeyboardSetupStep(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = stringResource(R.string.onboarding_keyboard_title),
+            text = stringResource(R.string.onboarding_overlay_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -496,7 +442,7 @@ private fun KeyboardSetupStep(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = stringResource(R.string.onboarding_keyboard_subtitle),
+            text = stringResource(R.string.onboarding_overlay_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -504,57 +450,47 @@ private fun KeyboardSetupStep(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Step 1: Enable keyboard
         SetupStepItem(
             number = "1",
-            text = stringResource(R.string.onboarding_keyboard_step1),
-            isCompleted = isKeyboardEnabled,
-            onClick = if (!isKeyboardEnabled) onOpenSettings else null
+            text = stringResource(R.string.onboarding_overlay_step1),
+            isCompleted = isEnabled,
+            onClick = if (!isEnabled) onOpenSettings else null
         )
+
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Step 2: Select keyboard
         SetupStepItem(
             number = "2",
-            text = stringResource(R.string.onboarding_keyboard_step2),
-            isCompleted = isKeyboardSelected,
-            onClick = if (isKeyboardEnabled && !isKeyboardSelected) onSelectKeyboard else null
+            text = stringResource(R.string.onboarding_overlay_step2),
+            isCompleted = isEnabled,
+            onClick = if (!isEnabled) onOpenSettings else null
         )
+
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Step 3: Try dictation
         SetupStepItem(
             number = "3",
-            text = stringResource(R.string.onboarding_keyboard_step3),
-            isCompleted = hasDictated,
-            onClick = if (isKeyboardSelected && !hasDictated) {{ focusRequester.requestFocus() }} else null,
-            trailingContent = if (isKeyboardSelected) {
-                {
-                    CircularMicButton(
-                        state = MicButtonState.Idle,
-                        onClick = { },
-                        size = 28.dp
-                    )
-                }
-            } else null
+            text = stringResource(R.string.onboarding_overlay_step3),
+            isCompleted = testInputText.isNotBlank()
         )
 
-        if (isKeyboardSelected) {
+        if (!isEnabled) {
             Spacer(modifier = Modifier.height(12.dp))
-
-            androidx.compose.material3.OutlinedTextField(
-                value = testText,
-                onValueChange = {
-                    testText = it
-                    onTextChanged(it)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester),
-                placeholder = { Text("Say something like \"Hello, this is a test\"", style = MaterialTheme.typography.bodySmall) },
+            Text(
+                text = stringResource(R.string.onboarding_overlay_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = testInputText,
+                onValueChange = onTestInputChanged,
+                modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                textStyle = MaterialTheme.typography.bodySmall,
-                shape = MaterialTheme.shapes.small
+                label = { Text(stringResource(R.string.onboarding_overlay_test_label)) },
+                placeholder = { Text(stringResource(R.string.onboarding_overlay_test_placeholder)) }
             )
         }
     }
@@ -593,8 +529,7 @@ private fun SetupStepItem(
     number: String,
     text: String,
     isCompleted: Boolean = false,
-    onClick: (() -> Unit)? = null,
-    trailingContent: @Composable (() -> Unit)? = null
+    onClick: (() -> Unit)? = null
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -641,49 +576,49 @@ private fun SetupStepItem(
             text = text,
             style = MaterialTheme.typography.bodySmall,
             color = if (isCompleted) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
+            else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
-        if (!isCompleted && trailingContent != null) {
-            trailingContent()
-        }
     }
 }
 
-private fun openKeyboardSettings(context: Context) {
-    val imeId = "${context.packageName}/${context.packageName}.service.AIDictationIME"
+private fun hasMicrophonePermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
+}
 
-    try {
-        // Try Samsung/OneUI style deep link first
-        val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        intent.putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
-            putString(":settings:fragment_args_key", imeId)
-        })
-        intent.putExtra("HIGHLIGHT_IME", imeId)
-        intent.putExtra("android.intent.extra.PACKAGE_NAME", context.packageName)
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        // Fallback to basic settings
-        val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        context.startActivity(intent)
+private fun openAccessibilitySettings(context: Context) {
+    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
+    context.startActivity(intent)
 }
 
-private fun showKeyboardPicker(context: Context) {
-    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    imm.showInputMethodPicker()
-}
+private fun isOverlayAccessibilityEnabled(context: Context): Boolean {
+    val enabled = Settings.Secure.getInt(
+        context.contentResolver,
+        Settings.Secure.ACCESSIBILITY_ENABLED,
+        0
+    ) == 1
 
-private fun isKeyboardEnabled(context: Context): Boolean {
-    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    val enabledInputMethods = imm.enabledInputMethodList
-    return enabledInputMethods.any { it.packageName == context.packageName }
-}
+    if (!enabled) return false
 
-private fun isKeyboardSelected(context: Context): Boolean {
-    val currentIme = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-    // Format is "com.whispermate.aidictation/.service.AIDictationIME"
-    return currentIme?.startsWith(context.packageName) == true
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ) ?: return false
+
+    val className = OverlayDictationAccessibilityService::class.java.name
+    val classNameWithoutPackage = className.removePrefix("${context.packageName}.")
+    val fullServiceId = "${context.packageName}/$className"
+    val shortServiceId = "${context.packageName}/.$classNameWithoutPackage"
+    val shortSimpleServiceId = "${context.packageName}/.${OverlayDictationAccessibilityService::class.java.simpleName}"
+
+    return enabledServices.split(':').any { serviceId ->
+        serviceId.equals(fullServiceId, ignoreCase = true) ||
+            serviceId.equals(shortServiceId, ignoreCase = true) ||
+            serviceId.equals(shortSimpleServiceId, ignoreCase = true)
+    }
 }

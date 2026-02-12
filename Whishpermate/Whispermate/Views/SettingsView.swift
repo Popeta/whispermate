@@ -532,7 +532,7 @@ struct SettingsView: View {
                                 .foregroundStyle(Color.dsMutedForeground)
                         }
                         Spacer()
-                        HotkeyRecorderView(hotkeyManager: hotkeyManager, hotkeyType: .dictation)
+                        HotkeyRecorderView(hotkeyManager: hotkeyManager, hotkeyType: .dictation, showsConflictHelp: true)
                     }
                     .padding(.vertical, 2)
 

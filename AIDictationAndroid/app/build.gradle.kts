@@ -70,6 +70,9 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Play-delivered on-device model pack for Parakeet.
+    assetPacks.add(":parakeetpack")
 }
 
 dependencies {
@@ -121,7 +124,4 @@ dependencies {
 
     // Debug
     debugImplementation(libs.androidx.ui.tooling)
-
-    // Simple Keyboard (forked from rkkr/simple-keyboard, Apache 2.0)
-    implementation(project(":simple-keyboard"))
 }

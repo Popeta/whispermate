@@ -8,7 +8,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
-import rkr.simplekeyboard.inputmethod.R
+import com.whispermate.aidictation.R
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.PI

@@ -1,0 +1,1074 @@
+package com.whispermate.aidictation.service
+
+import android.Manifest
+import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.util.Log
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.ContextCompat
+import com.whispermate.aidictation.R
+import com.squareup.moshi.Moshi
+import com.whispermate.aidictation.data.preferences.AppPreferences
+import com.whispermate.aidictation.data.remote.CommandClient
+import com.whispermate.aidictation.data.remote.TranscriptionClient
+import com.whispermate.aidictation.domain.model.Command
+import com.whispermate.aidictation.ui.views.CircularMicButtonView
+import com.whispermate.aidictation.util.AudioRecorder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+/**
+ * Accessibility-based dictation service that shows a draggable bubble overlay when an editable
+ * text field is focused, while keeping the user's regular keyboard (e.g. Gboard).
+ */
+class OverlayDictationAccessibilityService : AccessibilityService() {
+
+    companion object {
+        private const val TAG = "OverlayDictationSvc"
+        private const val BUBBLE_PREFS = "overlay_bubble"
+        private const val BUBBLE_X_KEY = "bubble_x"
+        private const val BUBBLE_Y_KEY = "bubble_y"
+        private const val MIN_RECORDING_MS = 500L
+        private const val BUBBLE_SIZE_DP = 44
+        private const val BUBBLE_MARGIN_DP = 8
+        private const val BUBBLE_VISIBILITY_DELAY_MS = 80L
+        private const val BUBBLE_ANIMATION_MS = 140L
+        private const val COMMAND_ACTION_HORIZONTAL_MARGIN_DP = 8
+        private const val COMMAND_ACTION_GAP_DP = 8
+        private const val COMMAND_ACTION_ESTIMATED_WIDTH_DP = 220
+        private const val COMMAND_ACTION_ESTIMATED_HEIGHT_DP = 40
+        private const val COMMAND_CLEANUP_ID = "cleanup"
+        private const val COMMAND_REWRITE_ID = "rewrite"
+
+        private val TRACKED_EVENT_TYPES = setOf(
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        )
+    }
+
+    private enum class RecordingState {
+        Idle,
+        Recording,
+        Processing
+    }
+
+    private data class EditableTextSnapshot(
+        val text: String,
+        val selectionStart: Int,
+        val selectionEnd: Int
+    )
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private lateinit var appPreferences: AppPreferences
+    private lateinit var windowManager: WindowManager
+
+    private var bubbleView: CircularMicButtonView? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var isBubbleAttached = false
+    private var commandActionsView: LinearLayout? = null
+    private var commandActionsParams: WindowManager.LayoutParams? = null
+    private var isCommandActionsAttached = false
+
+    private var recordingState: RecordingState = RecordingState.Idle
+    private var audioRecorder: AudioRecorder? = null
+    private var vadJob: Job? = null
+    private var focusLossJob: Job? = null
+    private var bubbleAnimationJob: Job? = null
+
+    private var lastFocusedPackage: String? = null
+    private var lastDictatedText: String = ""
+
+    private val bubblePrefs by lazy { getSharedPreferences(BUBBLE_PREFS, Context.MODE_PRIVATE) }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        appPreferences = AppPreferences(applicationContext, Moshi.Builder().build())
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        refreshOverlayVisibility(null)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        event ?: return
+        if (event.eventType !in TRACKED_EVENT_TYPES) return
+
+        lastFocusedPackage = event.packageName?.toString()
+        refreshOverlayVisibility(event.source)
+    }
+
+    override fun onInterrupt() {
+        stopRecording(discard = true)
+        hideBubble(animated = false)
+        hideCommandActions(animated = false)
+        stopBubbleAnimation()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopRecording(discard = true)
+        hideBubble(animated = false)
+        hideCommandActions(animated = false)
+        stopBubbleAnimation()
+        serviceScope.cancel()
+    }
+
+    private fun refreshOverlayVisibility(source: AccessibilityNodeInfo?) {
+        focusLossJob?.cancel()
+        if (shouldShowBubble(source)) {
+            showBubble()
+            updateCommandActionsVisibility(source)
+            return
+        }
+
+        focusLossJob = serviceScope.launch {
+            delay(BUBBLE_VISIBILITY_DELAY_MS)
+            if (!shouldShowBubble(null)) {
+                if (recordingState == RecordingState.Recording) {
+                    stopRecording(discard = true)
+                }
+                hideBubble(animated = true)
+                hideCommandActions(animated = true)
+            } else {
+                showBubble()
+                updateCommandActionsVisibility(null)
+            }
+        }
+    }
+
+    private fun shouldShowBubble(source: AccessibilityNodeInfo?): Boolean {
+        if (!isInputMethodVisible()) return false
+        val focusedNode = resolveFocusedEditableNode(source) ?: return false
+        focusedNode.recycle()
+        return true
+    }
+
+    private fun isInputMethodVisible(): Boolean {
+        return windows.any { window ->
+            window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        }
+    }
+
+    private fun resolveFocusedEditableNode(source: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (source != null && source.isFocused && isEligibleEditableNode(source)) {
+            return AccessibilityNodeInfo.obtain(source)
+        }
+
+        val sourceFocused = source?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (sourceFocused != null && isEligibleEditableNode(sourceFocused)) {
+            return AccessibilityNodeInfo.obtain(sourceFocused)
+        }
+
+        val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null && isEligibleEditableNode(focused)) {
+            return AccessibilityNodeInfo.obtain(focused)
+        }
+
+        return null
+    }
+
+    private fun isEligibleEditableNode(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isEditable) return false
+        if (!node.isVisibleToUser) return false
+        if (!node.isFocused) return false
+        if (!node.isEnabled) return false
+        if (node.isPassword) return false
+        return true
+    }
+
+    private fun showBubble() {
+        ensureBubbleCreated()
+        val bubble = bubbleView ?: return
+        val params = bubbleParams ?: return
+
+        bubble.animate().cancel()
+        if (isBubbleAttached) {
+            bubble.alpha = 1f
+            updateCommandActionsPosition()
+            updateBubbleUi()
+            return
+        }
+
+        try {
+            bubble.alpha = 0f
+            windowManager.addView(bubble, params)
+            isBubbleAttached = true
+            updateCommandActionsPosition()
+            bubble.animate()
+                .alpha(1f)
+                .setDuration(BUBBLE_ANIMATION_MS)
+                .start()
+            updateBubbleUi()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach bubble overlay", e)
+        }
+    }
+
+    private fun hideBubble(animated: Boolean = true) {
+        if (!isBubbleAttached) return
+        val bubble = bubbleView ?: return
+        bubble.animate().cancel()
+
+        if (!animated) {
+            removeBubbleView()
+            return
+        }
+
+        bubble.animate()
+            .alpha(0f)
+            .setDuration(BUBBLE_ANIMATION_MS)
+            .withEndAction { removeBubbleView() }
+            .start()
+    }
+
+    private fun removeBubbleView() {
+        if (!isBubbleAttached) return
+        val bubble = bubbleView ?: return
+        try {
+            windowManager.removeView(bubble)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to remove bubble overlay", e)
+        } finally {
+            isBubbleAttached = false
+            bubble.alpha = 1f
+            hideCommandActions(animated = false)
+            stopBubbleAnimation()
+        }
+    }
+
+    private fun ensureBubbleCreated() {
+        if (bubbleView != null) return
+
+        val size = dp(BUBBLE_SIZE_DP)
+        val themedIdleColor = resolveThemeColor(
+            android.R.attr.colorPrimary,
+            0xFF2196F3.toInt()
+        )
+        val themedActiveColor = resolveThemeColor(
+            android.R.attr.colorSecondary,
+            0xFFFF9500.toInt()
+        )
+
+        bubbleView = CircularMicButtonView(this).apply {
+            elevation = dp(8).toFloat()
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setColors(themedIdleColor, themedActiveColor)
+            setState(CircularMicButtonView.State.Idle)
+        }
+
+        val startX = bubblePrefs.getInt(BUBBLE_X_KEY, defaultBubbleX())
+        val startY = bubblePrefs.getInt(BUBBLE_Y_KEY, defaultBubbleY())
+
+        bubbleParams = WindowManager.LayoutParams(
+            size,
+            size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = startX
+            y = startY
+        }
+
+        attachDragAndTapHandler()
+    }
+
+    private fun ensureCommandActionsCreated() {
+        if (commandActionsView != null) return
+
+        val horizontalPadding = dp(12)
+        val verticalPadding = dp(8)
+        val buttonGap = dp(COMMAND_ACTION_GAP_DP)
+        val surfaceColor = resolveThemeColor(
+            android.R.attr.colorBackgroundFloating,
+            resolveThemeColor(android.R.attr.colorBackground, 0xFF1A1A1A.toInt())
+        )
+        val onSurfaceColor = resolveThemeColor(android.R.attr.textColorPrimary, Color.WHITE)
+        val containerColor = withAlpha(surfaceColor, 0.92f)
+        val chipColor = withAlpha(onSurfaceColor, 0.14f)
+
+        val fixGrammarButton = createCommandActionButton(
+            label = getString(R.string.overlay_action_fix_grammar),
+            textColor = onSurfaceColor,
+            backgroundColor = chipColor,
+            onClick = { executeSelectionCommand(COMMAND_CLEANUP_ID) }
+        )
+        val rewriteButton = createCommandActionButton(
+            label = getString(R.string.overlay_action_rewrite_ai),
+            textColor = onSurfaceColor,
+            backgroundColor = chipColor,
+            onClick = { executeSelectionCommand(COMMAND_REWRITE_ID) }
+        )
+
+        commandActionsView = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            elevation = dp(6).toFloat()
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(22).toFloat()
+                setColor(containerColor)
+            }
+
+            addView(fixGrammarButton)
+            addView(rewriteButton, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = buttonGap
+            })
+        }
+
+        commandActionsParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = defaultBubbleX()
+            y = defaultBubbleY()
+        }
+    }
+
+    private fun createCommandActionButton(
+        label: String,
+        textColor: Int,
+        backgroundColor: Int,
+        onClick: () -> Unit
+    ): TextView {
+        return TextView(this).apply {
+            text = label
+            setTextColor(textColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            isAllCaps = false
+            minHeight = dp(32)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                setColor(backgroundColor)
+            }
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun updateCommandActionsVisibility(source: AccessibilityNodeInfo?) {
+        if (!isBubbleAttached || recordingState != RecordingState.Idle) {
+            hideCommandActions(animated = true)
+            return
+        }
+
+        val node = resolveFocusedEditableNode(source)
+        if (node == null) {
+            hideCommandActions(animated = true)
+            return
+        }
+
+        val snapshot = captureEditableTextSnapshot(node)
+        node.recycle()
+
+        val hasSelection = snapshot.selectionEnd > snapshot.selectionStart && snapshot.text.isNotBlank()
+        if (hasSelection) {
+            showCommandActions()
+        } else {
+            hideCommandActions(animated = true)
+        }
+    }
+
+    private fun showCommandActions() {
+        ensureCommandActionsCreated()
+        val actions = commandActionsView ?: return
+        val params = commandActionsParams ?: return
+        if (!isBubbleAttached) return
+
+        actions.animate().cancel()
+        if (isCommandActionsAttached) {
+            actions.alpha = 1f
+            updateCommandActionsPosition()
+            return
+        }
+
+        try {
+            actions.alpha = 0f
+            windowManager.addView(actions, params)
+            isCommandActionsAttached = true
+            updateCommandActionsPosition()
+            actions.animate()
+                .alpha(1f)
+                .setDuration(BUBBLE_ANIMATION_MS)
+                .start()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to attach command actions overlay", e)
+        }
+    }
+
+    private fun hideCommandActions(animated: Boolean = true) {
+        if (!isCommandActionsAttached) return
+        val actions = commandActionsView ?: return
+        actions.animate().cancel()
+
+        if (!animated) {
+            removeCommandActionsView()
+            return
+        }
+
+        actions.animate()
+            .alpha(0f)
+            .setDuration(BUBBLE_ANIMATION_MS)
+            .withEndAction { removeCommandActionsView() }
+            .start()
+    }
+
+    private fun removeCommandActionsView() {
+        if (!isCommandActionsAttached) return
+        val actions = commandActionsView ?: return
+        try {
+            windowManager.removeView(actions)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to remove command actions overlay", e)
+        } finally {
+            isCommandActionsAttached = false
+            actions.alpha = 1f
+        }
+    }
+
+    private fun updateCommandActionsPosition() {
+        if (!isCommandActionsAttached) return
+        val params = commandActionsParams ?: return
+        val actions = commandActionsView ?: return
+        val bubble = bubbleParams ?: return
+
+        val margin = dp(COMMAND_ACTION_HORIZONTAL_MARGIN_DP)
+        val estimatedWidth = actions.width.takeIf { it > 0 } ?: dp(COMMAND_ACTION_ESTIMATED_WIDTH_DP)
+        val estimatedHeight = actions.height.takeIf { it > 0 } ?: dp(COMMAND_ACTION_ESTIMATED_HEIGHT_DP)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+
+        val leftX = bubble.x - estimatedWidth - margin
+        val rightX = bubble.x + dp(BUBBLE_SIZE_DP) + margin
+        val maxX = (screenWidth - estimatedWidth - margin).coerceAtLeast(margin)
+        val targetX = if (leftX >= margin) leftX else rightX
+
+        val centeredY = bubble.y + (dp(BUBBLE_SIZE_DP) - estimatedHeight) / 2
+        val maxY = (screenHeight - estimatedHeight - margin).coerceAtLeast(margin)
+
+        params.x = targetX.coerceIn(margin, maxX)
+        params.y = centeredY.coerceIn(margin, maxY)
+
+        try {
+            windowManager.updateViewLayout(actions, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update command actions position", e)
+        }
+    }
+
+    private fun attachDragAndTapHandler() {
+        val bubble = bubbleView ?: return
+        val params = bubbleParams ?: return
+
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var downRawX = 0f
+        var downRawY = 0f
+        var downX = 0
+        var downY = 0
+        var dragging = false
+
+        bubble.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    downX = params.x
+                    downY = params.y
+                    dragging = false
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaX = (event.rawX - downRawX).toInt()
+                    val deltaY = (event.rawY - downRawY).toInt()
+
+                    if (!dragging && (kotlin.math.abs(deltaX) > touchSlop || kotlin.math.abs(deltaY) > touchSlop)) {
+                        dragging = true
+                    }
+
+                    if (dragging) {
+                        params.x = downX + deltaX
+                        params.y = downY + deltaY
+                        updateBubblePosition()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    if (dragging) {
+                        persistBubblePosition(params.x, params.y)
+                    } else {
+                        onBubbleTapped()
+                    }
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun onBubbleTapped() {
+        when (recordingState) {
+            RecordingState.Idle -> startRecording()
+            RecordingState.Recording -> stopRecording(discard = false)
+            RecordingState.Processing -> Unit
+        }
+    }
+
+    private fun updateBubblePosition() {
+        if (!isBubbleAttached) return
+        val bubble = bubbleView ?: return
+        val params = bubbleParams ?: return
+
+        try {
+            windowManager.updateViewLayout(bubble, params)
+            updateCommandActionsPosition()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update bubble position", e)
+        }
+    }
+
+    private fun persistBubblePosition(x: Int, y: Int) {
+        bubblePrefs.edit()
+            .putInt(BUBBLE_X_KEY, x)
+            .putInt(BUBBLE_Y_KEY, y)
+            .apply()
+    }
+
+    private fun executeSelectionCommand(commandId: String) {
+        if (recordingState != RecordingState.Idle) return
+
+        val node = resolveFocusedEditableNode(null)
+        if (node == null) {
+            hideCommandActions(animated = true)
+            return
+        }
+
+        val snapshot = captureEditableTextSnapshot(node)
+        node.recycle()
+
+        if (snapshot.selectionEnd <= snapshot.selectionStart) {
+            hideCommandActions(animated = true)
+            return
+        }
+
+        val targetText = snapshot.text.substring(snapshot.selectionStart, snapshot.selectionEnd)
+        if (targetText.isBlank()) {
+            hideCommandActions(animated = true)
+            return
+        }
+
+        val context = snapshot.text.take(snapshot.selectionStart).takeLast(200)
+        hideCommandActions(animated = true)
+        recordingState = RecordingState.Processing
+        updateBubbleUi()
+
+        serviceScope.launch {
+            try {
+                val command = resolveCommand(commandId)
+                if (command == null) {
+                    Toast.makeText(
+                        this@OverlayDictationAccessibilityService,
+                        R.string.overlay_command_unavailable,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@launch
+                }
+
+                val contextRules = appPreferences.getInstructionsForApp(lastFocusedPackage)
+                val result = CommandClient.execute(command, targetText, context, contextRules)
+                result.onSuccess { transformed ->
+                    if (transformed.isBlank()) return@onSuccess
+                    val applied = replaceCurrentSelection(transformed)
+                    if (!applied) {
+                        Toast.makeText(
+                            this@OverlayDictationAccessibilityService,
+                            R.string.overlay_command_apply_failed,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        lastDictatedText = transformed
+                    }
+                }.onFailure { error ->
+                    Log.e(TAG, "Command '${command.name}' failed", error)
+                    Toast.makeText(
+                        this@OverlayDictationAccessibilityService,
+                        getString(R.string.overlay_command_failed, command.name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } finally {
+                recordingState = RecordingState.Idle
+                updateBubbleUi()
+                refreshOverlayVisibility(null)
+            }
+        }
+    }
+
+    private suspend fun resolveCommand(commandId: String): Command? {
+        return appPreferences.getEnabledCommands().find { it.id == commandId }
+            ?: AppPreferences.defaultCommands.find { it.id == commandId }
+    }
+
+    private fun replaceCurrentSelection(replacement: String): Boolean {
+        val node = resolveFocusedEditableNode(null) ?: return false
+        try {
+            val snapshot = captureEditableTextSnapshot(node)
+            val start = snapshot.selectionStart
+            val end = snapshot.selectionEnd
+            if (end <= start) return false
+            return replaceRange(node, snapshot.text, start, end, replacement)
+        } finally {
+            node.recycle()
+        }
+    }
+
+    private fun startRecording() {
+        if (recordingState != RecordingState.Idle) return
+
+        hideCommandActions(animated = true)
+
+        val focusedNode = resolveFocusedEditableNode(null)
+        if (focusedNode == null) {
+            Toast.makeText(this, "Focus a text field first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        focusedNode.recycle()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val recorder = AudioRecorder(this, enableVAD = true)
+        val file = recorder.start()
+        if (file == null) {
+            Toast.makeText(this, "Could not start recording", Toast.LENGTH_SHORT).show()
+            recorder.release()
+            return
+        }
+
+        audioRecorder = recorder
+        recordingState = RecordingState.Recording
+        updateBubbleUi()
+
+        vadJob?.cancel()
+        vadJob = serviceScope.launch {
+            recorder.shouldAutoStop.collectLatest { shouldStop ->
+                if (shouldStop && recordingState == RecordingState.Recording) {
+                    stopRecording(discard = false)
+                }
+            }
+        }
+    }
+
+    private fun stopRecording(discard: Boolean) {
+        if (recordingState != RecordingState.Recording) return
+
+        vadJob?.cancel()
+        vadJob = null
+
+        val recorder = audioRecorder ?: run {
+            recordingState = RecordingState.Idle
+            updateBubbleUi()
+            return
+        }
+
+        val speechDetected = recorder.hasSpeechBeenDetected()
+        val result = recorder.stop()
+        val audioFile = result?.first
+        val duration = result?.second ?: 0L
+        audioRecorder = null
+
+        if (discard) {
+            audioFile?.delete()
+            recordingState = RecordingState.Idle
+            updateBubbleUi()
+            return
+        }
+
+        if (audioFile == null || !audioFile.exists()) {
+            recordingState = RecordingState.Idle
+            updateBubbleUi()
+            return
+        }
+
+        if (duration < MIN_RECORDING_MS || !speechDetected) {
+            audioFile.delete()
+            recordingState = RecordingState.Idle
+            updateBubbleUi()
+            return
+        }
+
+        val focusedNode = resolveFocusedEditableNode(null)
+        if (focusedNode == null) {
+            audioFile.delete()
+            recordingState = RecordingState.Idle
+            updateBubbleUi()
+            return
+        }
+        focusedNode.recycle()
+
+        recordingState = RecordingState.Processing
+        updateBubbleUi()
+
+        serviceScope.launch {
+            try {
+                processRecording(audioFile)
+            } finally {
+                audioFile.delete()
+                recordingState = RecordingState.Idle
+                updateBubbleUi()
+                refreshOverlayVisibility(null)
+            }
+        }
+    }
+
+    private suspend fun processRecording(audioFile: java.io.File) {
+        val node = resolveFocusedEditableNode(null)
+        val snapshot = node?.let { captureEditableTextSnapshot(it) } ?: EditableTextSnapshot("", 0, 0)
+        node?.recycle()
+
+        val contextText = snapshot.text.take(snapshot.selectionStart).takeLast(200)
+        val contextRules = appPreferences.getInstructionsForApp(lastFocusedPackage)
+        val enabledCommands = appPreferences.getEnabledCommands()
+
+        val transcriptionPrompt = buildString {
+            if (contextText.isNotEmpty()) {
+                append(contextText)
+            }
+            if (!contextRules.isNullOrBlank()) {
+                if (isNotEmpty()) append("\n\n")
+                append("Instructions: ")
+                append(contextRules)
+            }
+        }.ifEmpty { null }
+
+        val result = TranscriptionClient.transcribeWithCommands(
+            audioFile = audioFile,
+            prompt = transcriptionPrompt,
+            contextText = lastDictatedText,
+            commands = enabledCommands,
+            additionalInstructions = contextRules
+        )
+
+        result.onSuccess { transcription ->
+            if (transcription.text.isBlank()) return@onSuccess
+
+            val applied = if (transcription.executedCommand != null) {
+                applyCommandResult(transcription.text)
+            } else {
+                insertDictationText(transcription.text)
+            }
+
+            if (applied) {
+                lastDictatedText = transcription.text
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Transcription failed", error)
+            Toast.makeText(this@OverlayDictationAccessibilityService, "Transcription failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun applyCommandResult(transformedText: String): Boolean {
+        val node = resolveFocusedEditableNode(null) ?: return false
+        try {
+            val snapshot = captureEditableTextSnapshot(node)
+            val current = snapshot.text
+            val selStart = snapshot.selectionStart
+            val selEnd = snapshot.selectionEnd
+
+            if (selEnd > selStart) {
+                return replaceRange(node, current, selStart, selEnd, transformedText)
+            }
+
+            if (lastDictatedText.isNotBlank()) {
+                val start = current.lastIndexOf(lastDictatedText)
+                if (start >= 0) {
+                    return replaceRange(
+                        node = node,
+                        currentText = current,
+                        start = start,
+                        end = start + lastDictatedText.length,
+                        replacement = transformedText
+                    )
+                }
+            }
+
+            return insertDictationText(transformedText)
+        } finally {
+            node.recycle()
+        }
+    }
+
+    private fun insertDictationText(text: String): Boolean {
+        val node = resolveFocusedEditableNode(null) ?: return false
+        try {
+            val snapshot = captureEditableTextSnapshot(node)
+            val current = snapshot.text
+            val selStart = snapshot.selectionStart
+            val selEnd = snapshot.selectionEnd
+
+            val insertText = withLeadingSpaceIfNeeded(current, selStart, text)
+            return replaceRange(node, current, selStart, selEnd, insertText)
+        } finally {
+            node.recycle()
+        }
+    }
+
+    private fun replaceRange(
+        node: AccessibilityNodeInfo,
+        currentText: String,
+        start: Int,
+        end: Int,
+        replacement: String
+    ): Boolean {
+        val safeStart = start.coerceIn(0, currentText.length)
+        val safeEnd = end.coerceIn(safeStart, currentText.length)
+
+        val updated = buildString {
+            append(currentText.substring(0, safeStart))
+            append(replacement)
+            append(currentText.substring(safeEnd))
+        }
+
+        if (setNodeText(node, updated)) {
+            val cursor = safeStart + replacement.length
+            setNodeSelection(node, cursor, cursor)
+            return true
+        }
+
+        return pasteFallback(node, replacement, safeStart, safeEnd)
+    }
+
+    private fun setNodeText(node: AccessibilityNodeInfo, text: String): Boolean {
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    private fun setNodeSelection(node: AccessibilityNodeInfo, start: Int, end: Int): Boolean {
+        val args = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, start)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, end)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, args)
+    }
+
+    private fun pasteFallback(
+        node: AccessibilityNodeInfo,
+        text: String,
+        start: Int,
+        end: Int
+    ): Boolean {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("dictation", text))
+
+        setNodeSelection(node, start, end)
+        return node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+    }
+
+    private fun withLeadingSpaceIfNeeded(currentText: String, index: Int, text: String): String {
+        if (currentText.isEmpty() || index <= 0) return text
+        if (text.startsWith(" ")) return text
+
+        val previous = currentText[index - 1]
+        if (previous.isWhitespace()) return text
+
+        val startsWithPunctuation = text.startsWith(",") ||
+            text.startsWith(".") ||
+            text.startsWith("!") ||
+            text.startsWith("?") ||
+            text.startsWith(":") ||
+            text.startsWith(";")
+
+        return if (startsWithPunctuation) text else " $text"
+    }
+
+    private fun resolveSelectionStart(node: AccessibilityNodeInfo?, default: Int): Int {
+        val value = node?.textSelectionStart ?: -1
+        if (value < 0) return default.coerceAtLeast(0)
+        return value.coerceIn(0, default.coerceAtLeast(0))
+    }
+
+    private fun resolveSelectionEnd(node: AccessibilityNodeInfo?, start: Int, max: Int): Int {
+        val value = node?.textSelectionEnd ?: -1
+        if (value < 0) return start
+        return value.coerceIn(start, max)
+    }
+
+    private fun captureEditableTextSnapshot(node: AccessibilityNodeInfo): EditableTextSnapshot {
+        val rawText = node.text?.toString().orEmpty()
+        val rawSelStart = resolveSelectionStart(node, rawText.length)
+        val rawSelEnd = resolveSelectionEnd(node, rawSelStart, rawText.length)
+
+        val normalized = normalizeEditableText(node, rawText)
+        val selStart = (rawSelStart - normalized.removedPrefix).coerceIn(0, normalized.text.length)
+        val selEnd = (rawSelEnd - normalized.removedPrefix).coerceIn(selStart, normalized.text.length)
+
+        return EditableTextSnapshot(
+            text = normalized.text,
+            selectionStart = selStart,
+            selectionEnd = selEnd
+        )
+    }
+
+    private fun normalizeEditableText(
+        node: AccessibilityNodeInfo,
+        rawText: String
+    ): NormalizedText {
+        if (rawText.isEmpty()) return NormalizedText("", 0)
+        if (node.isShowingHintText) return NormalizedText("", rawText.length)
+
+        val hint = node.hintText?.toString()?.trim().orEmpty()
+        if (hint.isNotEmpty()) {
+            if (rawText.equals(hint, ignoreCase = true)) {
+                return NormalizedText("", rawText.length)
+            }
+
+            val hintPrefixRegex = Regex("^\\Q$hint\\E[\\s\\u00A0]*")
+            val hintPrefix = hintPrefixRegex.find(rawText)
+            if (hintPrefix != null && hintPrefix.range.first == 0) {
+                val prefixLength = hintPrefix.range.last + 1
+                return NormalizedText(rawText.substring(prefixLength), prefixLength)
+            }
+        }
+
+        val packageName = node.packageName?.toString().orEmpty()
+        val viewId = node.viewIdResourceName.orEmpty()
+        if (packageName == "com.android.chrome" && viewId == "com.android.chrome:id/url_bar") {
+            val chromeHints = listOf("Search Google or type URL", "Search or type URL")
+            for (prefix in chromeHints) {
+                if (!rawText.startsWith(prefix)) continue
+
+                var prefixLength = prefix.length
+                while (prefixLength < rawText.length && rawText[prefixLength].isWhitespace()) {
+                    prefixLength++
+                }
+                return NormalizedText(rawText.substring(prefixLength), prefixLength)
+            }
+        }
+
+        return NormalizedText(rawText, 0)
+    }
+
+    private data class NormalizedText(
+        val text: String,
+        val removedPrefix: Int
+    )
+
+    private fun updateBubbleUi() {
+        val bubble = bubbleView ?: return
+
+        when (recordingState) {
+            RecordingState.Idle -> {
+                stopBubbleAnimation()
+                bubble.setState(CircularMicButtonView.State.Idle)
+            }
+
+            RecordingState.Recording -> {
+                bubble.setState(CircularMicButtonView.State.Recording)
+                startBubbleAnimation()
+            }
+
+            RecordingState.Processing -> {
+                stopBubbleAnimation()
+                bubble.setState(CircularMicButtonView.State.Processing)
+            }
+        }
+    }
+
+    private fun startBubbleAnimation() {
+        bubbleAnimationJob?.cancel()
+        bubbleAnimationJob = serviceScope.launch {
+            while (recordingState == RecordingState.Recording) {
+                val recorder = audioRecorder
+                if (recorder == null) {
+                    break
+                }
+                bubbleView?.setAudioLevel(recorder.audioLevel.value)
+                bubbleView?.setFrequencyBands(recorder.frequencyBands.value)
+                delay(50)
+            }
+        }
+    }
+
+    private fun stopBubbleAnimation() {
+        bubbleAnimationJob?.cancel()
+        bubbleAnimationJob = null
+    }
+
+    private fun resolveThemeColor(attrResId: Int, fallback: Int): Int {
+        val typedArray = theme.obtainStyledAttributes(intArrayOf(attrResId))
+        return try {
+            typedArray.getColor(0, fallback)
+        } finally {
+            typedArray.recycle()
+        }
+    }
+
+    private fun withAlpha(color: Int, alphaFraction: Float): Int {
+        val alpha = (alphaFraction.coerceIn(0f, 1f) * 255f).toInt()
+        return (color and 0x00FFFFFF) or (alpha shl 24)
+    }
+
+    private fun defaultBubbleX(): Int {
+        val screenWidth = resources.displayMetrics.widthPixels
+        return (screenWidth - dp(BUBBLE_SIZE_DP + BUBBLE_MARGIN_DP)).coerceAtLeast(dp(BUBBLE_MARGIN_DP))
+    }
+
+    private fun defaultBubbleY(): Int {
+        val screenHeight = resources.displayMetrics.heightPixels
+        return screenHeight / 2
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
+}

@@ -29,7 +29,7 @@ class AnimatedMicButton @JvmOverloads constructor(
 
     // Orange color for active state
     private val activeColor = 0xFFFF9500.toInt()
-    private val idleColor = ContextCompat.getColor(context, rkr.simplekeyboard.inputmethod.R.color.key_text_color_lxx_system)
+    private val idleColor = ContextCompat.getColor(context, R.color.key_text_color_lxx_system)
 
     private var audioLevel = 0f
     private var isRecording = false

@@ -52,6 +52,9 @@ class CircularMicButtonView @JvmOverloads constructor(
     private var processingAnimator: ValueAnimator? = null
 
     // Paint objects
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+    }
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val barRect = RectF()
@@ -131,6 +134,17 @@ class CircularMicButtonView @JvmOverloads constructor(
         if (state == State.Recording) {
             updateBarHeights()
         }
+    }
+
+    fun setColors(idle: Int, active: Int) {
+        idleColor = idle
+        activeColor = active
+        val targetColor = when (state) {
+            State.Idle -> idleColor
+            State.Recording, State.Processing -> activeColor
+        }
+        currentBackgroundColor = targetColor
+        invalidate()
     }
 
     private fun animateColorTo(targetColor: Int) {
@@ -229,6 +243,10 @@ class CircularMicButtonView @JvmOverloads constructor(
         val centerX = width / 2f
         val centerY = height / 2f
         val radius = size / 2f
+
+        // Draw a subtle shadow under the button for better depth on all backgrounds.
+        shadowPaint.alpha = if (state == State.Idle) 58 else 72
+        canvas.drawCircle(centerX, centerY + (radius * 0.08f), radius * 1.03f, shadowPaint)
 
         // Draw circular background
         backgroundPaint.color = currentBackgroundColor

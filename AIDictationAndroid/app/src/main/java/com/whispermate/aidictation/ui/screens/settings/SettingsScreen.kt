@@ -24,8 +24,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -50,6 +51,7 @@ import androidx.core.content.ContextCompat
 import com.whispermate.aidictation.BuildConfig
 import com.whispermate.aidictation.R
 import com.whispermate.aidictation.domain.model.Recording
+import com.whispermate.aidictation.service.OverlayDictationAccessibilityService
 
 @Composable
 fun SettingsScreen(
@@ -60,10 +62,13 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+
     val hasMicPermission = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.RECORD_AUDIO
     ) == PackageManager.PERMISSION_GRANTED
+
+    val hasOverlayPermission = isOverlayAccessibilityEnabled(context)
 
     Column(
         modifier = modifier
@@ -71,7 +76,6 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Permissions Section
         SectionHeader(stringResource(R.string.settings_permissions))
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -83,33 +87,32 @@ fun SettingsScreen(
                 icon = Icons.Default.Mic,
                 title = stringResource(R.string.settings_microphone),
                 trailingContent = {
-                    Icon(
-                        imageVector = if (hasMicPermission) Icons.Default.Check else Icons.Default.Close,
-                        contentDescription = null,
-                        tint = if (hasMicPermission) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    StatusIcon(isEnabled = hasMicPermission)
                 }
             )
+
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
             SettingsItem(
-                icon = Icons.Default.Keyboard,
-                title = stringResource(R.string.settings_keyboard),
-                onClick = { openKeyboardSettings(context) },
+                icon = Icons.Default.Security,
+                title = stringResource(R.string.settings_overlay_access),
+                onClick = { openAccessibilitySettings(context) },
                 trailingContent = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusIcon(isEnabled = hasOverlayPermission)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Transcription Section
         SectionHeader(stringResource(R.string.settings_transcription))
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -133,7 +136,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // About Section
         SectionHeader(stringResource(R.string.settings_about))
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -156,7 +158,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Data Section
         SectionHeader(stringResource(R.string.settings_data))
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -203,6 +204,16 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun StatusIcon(isEnabled: Boolean) {
+    Icon(
+        imageVector = if (isEnabled) Icons.Default.Check else Icons.Default.Close,
+        contentDescription = null,
+        tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        modifier = Modifier.size(20.dp)
+    )
+}
+
+@Composable
 private fun SectionHeader(title: String) {
     Text(
         text = title,
@@ -218,8 +229,8 @@ private fun SettingsItem(
     title: String,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
-    iconTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
-    titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    titleColor: Color = MaterialTheme.colorScheme.onSurface,
     trailingContent: @Composable () -> Unit = {}
 ) {
     Row(
@@ -256,8 +267,36 @@ private fun SettingsItem(
     }
 }
 
-private fun openKeyboardSettings(context: Context) {
-    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
-    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+private fun openAccessibilitySettings(context: Context) {
+    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
     context.startActivity(intent)
+}
+
+private fun isOverlayAccessibilityEnabled(context: Context): Boolean {
+    val enabled = Settings.Secure.getInt(
+        context.contentResolver,
+        Settings.Secure.ACCESSIBILITY_ENABLED,
+        0
+    ) == 1
+
+    if (!enabled) return false
+
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ) ?: return false
+
+    val className = OverlayDictationAccessibilityService::class.java.name
+    val classNameWithoutPackage = className.removePrefix("${context.packageName}.")
+    val fullServiceId = "${context.packageName}/$className"
+    val shortServiceId = "${context.packageName}/.$classNameWithoutPackage"
+    val shortSimpleServiceId = "${context.packageName}/.${OverlayDictationAccessibilityService::class.java.simpleName}"
+
+    return enabledServices.split(':').any { serviceId ->
+        serviceId.equals(fullServiceId, ignoreCase = true) ||
+            serviceId.equals(shortServiceId, ignoreCase = true) ||
+            serviceId.equals(shortSimpleServiceId, ignoreCase = true)
+    }
 }

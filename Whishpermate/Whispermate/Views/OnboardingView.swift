@@ -370,7 +370,7 @@ struct OnboardingView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
 
-                HotkeyRecorderView(hotkeyManager: hotkeyManager)
+                HotkeyRecorderView(hotkeyManager: hotkeyManager, showsConflictHelp: true)
             }
             .padding(20)
             .frame(maxWidth: .infinity)
@@ -606,7 +606,7 @@ struct OnboardingView: View {
             if showChangeHotkey {
                 return "Set your preferred key or key combination. You can always change this setting later on your Dashboard."
             } else {
-                return "We recommend using Fn key at the bottom left of the keyboard."
+                return "We recommend using Fn or F5 (microphone key on many Apple keyboards)."
             }
         default:
             return nil

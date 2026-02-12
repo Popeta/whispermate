@@ -1,8 +1,14 @@
 import Foundation
+import OSLog
 
 /// Debug logging utility that only logs in DEBUG builds
 /// Automatically strips all logging from Release builds for privacy and security
 enum DebugLog {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.whispermate.macos",
+        category: "AIDictation"
+    )
+
     /// Log a general debug message
     static func log(_ items: Any..., separator: String = " ", file: String = #file, line: Int = #line) {
         #if DEBUG
@@ -39,11 +45,15 @@ enum DebugLog {
     /// Log an error message (always logs, even in Release)
     static func error(_ items: Any..., separator: String = " ", context: String? = nil) {
         let message = items.map { "\($0)" }.joined(separator: separator)
+        let fullMessage: String
         if let context = context {
-            print("❌ [\(context)] \(message)")
+            fullMessage = "❌ [\(context)] \(message)"
         } else {
-            print("❌ \(message)")
+            fullMessage = "❌ \(message)"
         }
+
+        print(fullMessage)
+        logger.error("\(fullMessage, privacy: .public)")
     }
 
     /// Log sensitive data (only in DEBUG, never in Release)

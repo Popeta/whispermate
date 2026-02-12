@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AIDictation"
 include(":app")
-include(":simple-keyboard")
+include(":parakeetpack")

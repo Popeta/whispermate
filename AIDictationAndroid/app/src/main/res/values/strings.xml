@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AIDictation</string>
-    <string name="ime_name">AI Dictation</string>
-    <string name="subtype_en_US">English (US)</string>
-    <string name="subtype_es_ES">Spanish</string>
-    <string name="subtype_fr_FR">French</string>
-    <string name="subtype_de_DE">German</string>
-    <string name="subtype_pt_BR">Portuguese (Brazil)</string>
-    <string name="subtype_ru_RU">Russian</string>
 
     <!-- Onboarding -->
     <string name="onboarding_welcome_title">Welcome to AI Dictation</string>
@@ -19,11 +12,15 @@
     <string name="onboarding_mic_title">Microphone Access</string>
     <string name="onboarding_mic_subtitle">We need microphone access to transcribe your voice</string>
     <string name="onboarding_mic_enable">Enable Microphone</string>
-    <string name="onboarding_keyboard_title">Enable Keyboard</string>
-    <string name="onboarding_keyboard_subtitle">Enable AI Dictation keyboard to use voice input anywhere</string>
-    <string name="onboarding_keyboard_step1">Enable AI Dictation keyboard</string>
-    <string name="onboarding_keyboard_step2">Select AI Dictation as your keyboard</string>
-    <string name="onboarding_keyboard_step3">Tap the mic button and dictate</string>
+    <string name="onboarding_overlay_title">Enable Overlay Dictation</string>
+    <string name="onboarding_overlay_subtitle">Enable Accessibility to show a mic bubble only when text input is focused</string>
+    <string name="onboarding_overlay_step1">Enable WhisperMate in Accessibility settings</string>
+    <string name="onboarding_overlay_step2">Focus any text field and tap the bubble to dictate</string>
+    <string name="onboarding_overlay_step3">Use the test field below to confirm dictation works</string>
+    <string name="onboarding_overlay_hint">The overlay stays hidden in password and secure fields.</string>
+    <string name="onboarding_overlay_test_label">Test field</string>
+    <string name="onboarding_overlay_test_placeholder">Tap here, then tap the bubble and start dictating...</string>
+    <string name="onboarding_try_dictation">Try dictation first</string>
     <string name="onboarding_open_settings">Open Settings</string>
     <string name="onboarding_get_started">Get Started</string>
 
@@ -46,7 +43,7 @@
     <!-- Settings -->
     <string name="settings_permissions">Permissions</string>
     <string name="settings_microphone">Microphone Access</string>
-    <string name="settings_keyboard">Keyboard Settings</string>
+    <string name="settings_overlay_access">Overlay Accessibility</string>
     <string name="settings_transcription">Transcription</string>
     <string name="settings_transcription_settings">Transcription Settings</string>
     <string name="settings_about">About</string>
@@ -74,4 +71,12 @@
     <string name="error_transcription_failed">Transcription failed</string>
     <string name="error_recording_failed">Recording failed</string>
     <string name="error_permission_denied">Permission denied</string>
+
+    <!-- Accessibility -->
+    <string name="accessibility_service_description">Shows a dictation bubble when a text field is focused, then inserts speech at cursor.</string>
+    <string name="overlay_action_fix_grammar">Fix grammar</string>
+    <string name="overlay_action_rewrite_ai">Rewrite with AI</string>
+    <string name="overlay_command_unavailable">Command unavailable</string>
+    <string name="overlay_command_apply_failed">Could not apply command</string>
+    <string name="overlay_command_failed">%1$s failed</string>
 </resources>
