@@ -78,6 +78,11 @@ Hotkey press → AudioRecorder.startRecording()
 **Transcription:** Groq (whisper-large-v3-turbo), OpenAI (whisper-1), Custom endpoint
 **LLM:** Groq, OpenAI (gpt-4o), Anthropic (claude-3-5-sonnet), Custom
 
+### Whisper Temperature
+Transcription API использует `temperature: 0.2` (в `OpenAIClient.swift`).
+- `0` вызывает repetition loop (залипание на одном токене, например "Скор. Скор. Скор.")
+- `0.2` — минимальная вариативность, предотвращает loop без потери точности
+
 ### Хранилище
 - **Keychain** — API ключи (`KeychainHelper.swift`)
 - **UserDefaults** — настройки (provider, hotkey, UI state)
