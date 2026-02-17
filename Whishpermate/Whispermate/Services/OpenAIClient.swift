@@ -111,10 +111,10 @@ class OpenAIClient {
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(effectiveModel)\r\n".data(using: .utf8)!)
 
-        // Add temperature parameter (optional - set to 0 for deterministic results)
+        // Add temperature parameter (0.2 prevents repetition loops while maintaining accuracy)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".data(using: .utf8)!)
-        body.append("0\r\n".data(using: .utf8)!)
+        body.append("0.2\r\n".data(using: .utf8)!)
 
         // Add prompt parameter (optional)
         if let prompt = prompt, !prompt.isEmpty {
