@@ -13,10 +13,10 @@
             <link>https://github.com/writingmate/aidictation/releases/tag/v0.0.49</link>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <enclosure
-                url="https://github.com/writingmate/aidictation/releases/download/v0.0.49/AIDictation.com-v0.0.49.dmg"
+                url="https://github.com/writingmate/aidictation/releases/download/v0.0.49/AIDictation-v0.0.49.dmg"
                 sparkle:version="49"
                 sparkle:shortVersionString="0.0.49"
-                length="8985276"
+                length="8992000"
                 type="application/octet-stream" />
         </item>
     </channel>
