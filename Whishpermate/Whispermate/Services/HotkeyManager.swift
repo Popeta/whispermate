@@ -704,6 +704,21 @@ class HotkeyManager: ObservableObject {
 
         // Check dictation hotkey
         if let hotkey = currentHotkey, !hotkey.isMouseButton, !isModifierOnlyHotkey(hotkey), event.keyCode == hotkey.keyCode {
+            // Only consume if modifiers match, OR we're already holding the key (push-to-talk where
+            // modifier may have been released slightly before the main key).
+            let rawEventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let eventModifiers = normalizedEventModifiers(rawEventModifiers, for: hotkey)
+            let requiredModifiers = hotkey.modifiers
+            let modifiersMatch: Bool
+            if requiredModifiers.isEmpty {
+                modifiersMatch = eventModifiers.isEmpty
+            } else {
+                modifiersMatch = eventModifiers.intersection(requiredModifiers) == requiredModifiers
+            }
+            guard modifiersMatch || isHoldingKey else {
+                return false
+            }
+
             if Diagnostics.trackedFunctionKeyCodes.contains(hotkey.keyCode) {
                 DebugLog.error("Dictation function-key MATCH on keyUp", context: "HotkeyDiagnostics")
             }
@@ -719,6 +734,19 @@ class HotkeyManager: ObservableObject {
 
         // Check command hotkey
         if let cmdHotkey = commandHotkey, !cmdHotkey.isMouseButton, !isModifierOnlyHotkey(cmdHotkey), event.keyCode == cmdHotkey.keyCode {
+            let rawEventModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let eventModifiers = normalizedEventModifiers(rawEventModifiers, for: cmdHotkey)
+            let requiredModifiers = cmdHotkey.modifiers
+            let modifiersMatch: Bool
+            if requiredModifiers.isEmpty {
+                modifiersMatch = eventModifiers.isEmpty
+            } else {
+                modifiersMatch = eventModifiers.intersection(requiredModifiers) == requiredModifiers
+            }
+            guard modifiersMatch || isHoldingCommandKey else {
+                return false
+            }
+
             DebugLog.info("🎯 COMMAND HOTKEY RELEASED - keyCode=\(event.keyCode)", context: "HotkeyManager LOG")
             if isPushToTalk && isHoldingCommandKey {
                 DebugLog.info("🎯 Command MATCH (Push-to-Talk) - calling onCommandHotkeyReleased", context: "HotkeyManager LOG")

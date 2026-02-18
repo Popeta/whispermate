@@ -299,6 +299,7 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? accentOrange : Color.clear)
