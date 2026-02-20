@@ -55,16 +55,23 @@ class AudioDeviceManager {
         guard status == noErr else { return devices }
 
         let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        guard deviceCount > 0 else { return devices }
         var audioDevices = [AudioDeviceID](repeating: 0, count: deviceCount)
 
-        let getDevicesStatus = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize,
-            &audioDevices
-        )
+        let getDevicesStatus = audioDevices.withUnsafeMutableBytes { rawBuffer -> OSStatus in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return kAudioHardwareUnspecifiedError
+            }
+
+            return AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &propertyAddress,
+                0,
+                nil,
+                &dataSize,
+                baseAddress
+            )
+        }
 
         guard getDevicesStatus == noErr else { return devices }
 
@@ -182,23 +189,29 @@ class AudioDeviceManager {
             &dataSize
         )
 
-        guard status == noErr else { return false }
+        guard status == noErr, dataSize > 0 else { return false }
 
-        let bufferList = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
-        defer { bufferList.deallocate() }
+        let rawBuffer = UnsafeMutableRawBufferPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawBuffer.deallocate() }
 
+        guard let baseAddress = rawBuffer.baseAddress else { return false }
         let getDataStatus = AudioObjectGetPropertyData(
             deviceID,
             &propertyAddress,
             0,
             nil,
             &dataSize,
-            bufferList
+            baseAddress
         )
 
         guard getDataStatus == noErr else { return false }
 
-        return bufferList.pointee.mNumberBuffers > 0
+        let bufferListPointer = baseAddress.assumingMemoryBound(to: AudioBufferList.self)
+        let bufferList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
+        return bufferList.contains { $0.mNumberChannels > 0 }
     }
 
     private func getDeviceName(deviceID: AudioDeviceID) -> String? {
@@ -219,7 +232,7 @@ class AudioDeviceManager {
 
         guard status == noErr else { return nil }
 
-        var name: CFString = "" as CFString
+        var name: Unmanaged<CFString>?
         status = AudioObjectGetPropertyData(
             deviceID,
             &propertyAddress,
@@ -229,8 +242,8 @@ class AudioDeviceManager {
             &name
         )
 
-        guard status == noErr else { return nil }
-        return name as String
+        guard status == noErr, let name else { return nil }
+        return name.takeUnretainedValue() as String
     }
 
     private func getDeviceUID(deviceID: AudioDeviceID) -> String? {
@@ -251,7 +264,7 @@ class AudioDeviceManager {
 
         guard status == noErr else { return nil }
 
-        var uid: CFString = "" as CFString
+        var uid: Unmanaged<CFString>?
         status = AudioObjectGetPropertyData(
             deviceID,
             &propertyAddress,
@@ -261,8 +274,8 @@ class AudioDeviceManager {
             &uid
         )
 
-        guard status == noErr else { return nil }
-        return uid as String
+        guard status == noErr, let uid else { return nil }
+        return uid.takeUnretainedValue() as String
     }
 
     // MARK: - Device Change Listener
