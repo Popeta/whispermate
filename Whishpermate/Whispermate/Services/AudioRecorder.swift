@@ -47,6 +47,10 @@ class AudioRecorder: NSObject, ObservableObject {
         ]
 
         do {
+            // Play recording start sound BEFORE recording starts
+            // so the microphone doesn't capture the feedback sound
+            SoundFeedbackManager.shared.playRecordingStartSound()
+
             // Start AVAudioRecorder for actual recording
             audioRecorder = try AVAudioRecorder(url: recordingURL!, settings: settings)
             audioRecorder?.isMeteringEnabled = true
@@ -73,9 +77,6 @@ class AudioRecorder: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.isRecording = true
             }
-
-            // Play recording start sound
-            SoundFeedbackManager.shared.playRecordingStartSound()
 
             DebugLog.info("startRecording success - isRecording after: \(isRecording)", context: "AudioRecorder LOG")
         } catch {
