@@ -6,9 +6,12 @@ import com.whispermate.aidictation.data.repository.RecordingRepository
 import com.whispermate.aidictation.data.repository.TranscriptionRepository
 import com.whispermate.aidictation.domain.model.Recording
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -34,6 +37,10 @@ class MainViewModel @Inject constructor(
     private val _recordingState = MutableStateFlow(RecordingState.Idle)
     val recordingState: StateFlow<RecordingState> = _recordingState.asStateFlow()
 
+    // Trigger for starting recording from outside (e.g. shortcut)
+    private val _startRecordingTrigger = MutableSharedFlow<Unit>(replay = 0)
+    val startRecordingTrigger: SharedFlow<Unit> = _startRecordingTrigger.asSharedFlow()
+
     // Selected recording for detail view
     private val _selectedRecording = MutableStateFlow<Recording?>(null)
     val selectedRecording: StateFlow<Recording?> = _selectedRecording.asStateFlow()
@@ -44,6 +51,12 @@ class MainViewModel @Inject constructor(
 
     fun startRecording() {
         _recordingState.value = RecordingState.Recording
+    }
+
+    fun triggerStartRecording() {
+        viewModelScope.launch {
+            _startRecordingTrigger.emit(Unit)
+        }
     }
 
     fun stopRecording(audioFile: File?, durationMs: Long) {

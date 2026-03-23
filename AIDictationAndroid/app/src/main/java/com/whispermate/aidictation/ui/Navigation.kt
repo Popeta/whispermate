@@ -2,6 +2,7 @@ package com.whispermate.aidictation.ui
 
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -28,12 +29,22 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun AIDictationNavHost(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    shouldStartRecording: Boolean = false,
+    onRecordingStarted: () -> Unit = {}
 ) {
     val onboardingViewModel: OnboardingViewModel = hiltViewModel()
     val hasCompletedOnboarding by onboardingViewModel.hasCompletedOnboarding.collectAsState()
 
     val startDestination = if (hasCompletedOnboarding) Screen.Main.route else Screen.Onboarding.route
+
+    LaunchedEffect(shouldStartRecording) {
+        if (shouldStartRecording && hasCompletedOnboarding) {
+            navController.navigate(Screen.Main.route) {
+                popUpTo(Screen.Main.route) { inclusive = true }
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -61,7 +72,9 @@ fun AIDictationNavHost(
                 onNavigateToRecordingDetail = { recordingId ->
                     Log.d("Navigation", "Navigating to recording detail: $recordingId")
                     navController.navigate(Screen.RecordingDetail.createRoute(recordingId))
-                }
+                },
+                shouldStartRecording = shouldStartRecording,
+                onRecordingStarted = onRecordingStarted
             )
         }
 

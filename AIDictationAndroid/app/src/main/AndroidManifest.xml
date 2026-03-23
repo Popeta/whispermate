@@ -25,7 +25,27 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <activity
+            android:name=".ShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="standard"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <receiver
+            android:name=".ShortcutReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.whispermate.aidictation.action.TOGGLE_DICTATION" />
+            </intent-filter>
+        </receiver>
 
         <!-- Color Debug Activity -->
         <activity

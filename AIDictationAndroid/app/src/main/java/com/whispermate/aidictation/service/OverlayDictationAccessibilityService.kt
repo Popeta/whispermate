@@ -2,13 +2,17 @@ package com.whispermate.aidictation.service
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
@@ -48,6 +52,7 @@ import kotlinx.coroutines.launch
 class OverlayDictationAccessibilityService : AccessibilityService() {
 
     companion object {
+        const val ACTION_START_DICTATION = "com.whispermate.aidictation.action.START_DICTATION"
         private const val TAG = "OverlayDictationSvc"
         private const val BUBBLE_PREFS = "overlay_bubble"
         private const val BUBBLE_X_KEY = "bubble_x"
@@ -148,7 +153,20 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         appPreferences = AppPreferences(applicationContext, Moshi.Builder().build())
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        
         refreshOverlayVisibility(null)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START_DICTATION) {
+            // We add a delay to ensure that the ShortcutActivity (if any) has 
+            // finished and focus has returned to the previously active app.
+            serviceScope.launch {
+                delay(300)
+                onBubbleTapped()
+            }
+        }
+        return START_STICKY
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -202,9 +220,9 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     }
 
     private fun shouldShowBubble(source: AccessibilityNodeInfo?): Boolean {
-        if (!isInputMethodVisible()) return false
+        // We check for eligibility even if keyboard is hidden, 
+        // especially for cover screen shortcuts on foldables.
         val focusedNode = resolveFocusedEditableNode(source) ?: return false
-        focusedNode.recycle()
         return true
     }
 
@@ -215,18 +233,29 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     }
 
     private fun resolveFocusedEditableNode(source: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        if (source != null && source.isFocused && isEligibleEditableNode(source)) {
-            return AccessibilityNodeInfo.obtain(source)
+        if (source != null && isEligibleEditableNode(source)) {
+            return source
         }
 
         val sourceFocused = source?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (sourceFocused != null && isEligibleEditableNode(sourceFocused)) {
-            return AccessibilityNodeInfo.obtain(sourceFocused)
+            return sourceFocused
+        }
+
+        // Search across all windows. On foldables (Flip/Fold), the target app 
+        // might be in a different window type when closed/on cover screen.
+        val windows = windows
+        for (window in windows) {
+            val root = window.root ?: continue
+            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (focused != null && isEligibleEditableNode(focused)) {
+                return focused
+            }
         }
 
         val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (focused != null && isEligibleEditableNode(focused)) {
-            return AccessibilityNodeInfo.obtain(focused)
+            return focused
         }
 
         return null
@@ -234,13 +263,12 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
 
     private fun isEligibleEditableNode(node: AccessibilityNodeInfo): Boolean {
         if (!node.isEditable) return false
-        if (!node.isVisibleToUser) return false
-        if (!node.isFocused) return false
+        // isVisibleToUser and isFocused can be unreliable on foldable cover screens 
+        // or when an overlay/routine is starting up.
         if (!node.isEnabled) return false
         if (node.isPassword) return false
         return true
     }
-
     private fun showBubble() {
         ensureBubbleCreated()
         val bubble = bubbleView ?: return
@@ -487,7 +515,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         }
 
         val snapshot = captureEditableTextSnapshot(node)
-        node.recycle()
 
         val hasSelection = snapshot.selectionEnd > snapshot.selectionStart && snapshot.text.isNotBlank()
         if (hasSelection) {
@@ -754,7 +781,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
                 contextBefore = contextBefore
             )
         } finally {
-            node.recycle()
         }
     }
 
@@ -767,7 +793,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             if (end <= start) return false
             return replaceRange(node, snapshot.text, start, end, replacement)
         } finally {
-            node.recycle()
         }
     }
 
@@ -797,7 +822,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
 
             return false
         } finally {
-            node.recycle()
         }
     }
 
@@ -837,7 +861,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             Toast.makeText(this, "Focus a text field first", Toast.LENGTH_SHORT).show()
             return
         }
-        focusedNode.recycle()
 
         if (mode == RecordingMode.RewriteInstruction && pendingRewriteTarget == null) {
             activeCommandAction = null
@@ -958,7 +981,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             updateBubbleUi()
             return
         }
-        focusedNode.recycle()
 
         recordingState = RecordingState.Processing
         updateBubbleUi()
@@ -989,7 +1011,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     private suspend fun processRecording(audioFile: java.io.File) {
         val node = resolveFocusedEditableNode(null)
         val snapshot = node?.let { captureEditableTextSnapshot(it) } ?: EditableTextSnapshot("", 0, 0)
-        node?.recycle()
 
         val contextText = snapshot.text.take(snapshot.selectionStart).takeLast(200)
         val contextRules = appPreferences.getInstructionsForApp(lastFocusedPackage)
@@ -1125,7 +1146,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
 
             return insertDictationText(transformedText)
         } finally {
-            node.recycle()
         }
     }
 
@@ -1140,7 +1160,6 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             val insertText = withLeadingSpaceIfNeeded(current, selStart, text)
             return replaceRange(node, current, selStart, selEnd, insertText)
         } finally {
-            node.recycle()
         }
     }
 
@@ -1164,6 +1183,11 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             val cursor = safeStart + replacement.length
             setNodeSelection(node, cursor, cursor)
             return true
+        }
+
+        if (currentText.isEmpty()) {
+            val rawLen = node.text?.length ?: 0
+            if (rawLen > 0) setNodeSelection(node, 0, rawLen)
         }
 
         return pasteFallback(node, replacement, safeStart, safeEnd)
@@ -1249,9 +1273,19 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         if (rawText.isEmpty()) return NormalizedText("", 0)
         if (node.isShowingHintText) return NormalizedText("", rawText.length)
 
+        // if both selection endpoints are -1, the field has no cursor position,
+        // which means it's likely showing placeholder text. Apps like Telegram don't set
+        // isShowingHintText=true or hintText when displaying their placeholder.
+        if (node.textSelectionStart == -1 && node.textSelectionEnd == -1) {
+            return NormalizedText("", rawText.length)
+        }
+
         val hint = node.hintText?.toString()?.trim().orEmpty()
         if (hint.isNotEmpty()) {
-            if (rawText.equals(hint, ignoreCase = true)) {
+            val hintNfc = java.text.Normalizer.normalize(hint, java.text.Normalizer.Form.NFC)
+            val rawNfc = java.text.Normalizer.normalize(rawText.trim(), java.text.Normalizer.Form.NFC)
+
+            if (rawNfc.equals(hintNfc, ignoreCase = true)) {
                 return NormalizedText("", rawText.length)
             }
 
