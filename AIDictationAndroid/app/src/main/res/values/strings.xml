@@ -48,6 +48,15 @@
     <string name="language_search_hint">Search languages…</string>
     <string name="language_selection_hint">Select languages you speak. Limits transcription to only those languages.</string>
     <string name="language_no_results">No languages found</string>
+    <string name="settings_api_config">API Configuration</string>
+    <string name="api_config_transcription">Transcription API</string>
+    <string name="api_config_postprocessing">Post-processing API</string>
+    <string name="api_config_provider">Provider</string>
+    <string name="api_config_api_key">API Key</string>
+    <string name="api_config_model">Model</string>
+    <string name="api_config_key_placeholder">Enter API key</string>
+    <string name="api_config_loading_models">Loading models…</string>
+    <string name="api_config_reset">Reset to Defaults</string>
     <string name="settings_permissions">Permissions</string>
     <string name="settings_microphone">Microphone Access</string>
     <string name="settings_overlay_access">Overlay Accessibility</string>

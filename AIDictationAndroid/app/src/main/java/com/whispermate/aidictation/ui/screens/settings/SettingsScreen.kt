@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Security
@@ -67,6 +68,7 @@ fun SettingsScreen(
     onMultilingualToggled: (Boolean) -> Unit = {},
     postProcessingEnabled: Boolean = true,
     onPostProcessingToggled: (Boolean) -> Unit = {},
+    onNavigateToApiConfig: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -183,6 +185,29 @@ fun SettingsScreen(
                         contentDescription = null,
                         tint = if (postProcessingEnabled) MaterialTheme.colorScheme.onSurfaceVariant
                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        SectionHeader(stringResource(R.string.settings_api_config))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            SettingsItem(
+                icon = Icons.Default.Key,
+                title = stringResource(R.string.settings_api_config),
+                onClick = onNavigateToApiConfig,
+                trailingContent = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             )

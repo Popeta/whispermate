@@ -65,6 +65,7 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     onNavigateToPostProcessingSettings: () -> Unit,
     onNavigateToLanguageSettings: () -> Unit,
+    onNavigateToApiConfig: () -> Unit,
     onNavigateToRecordingDetail: (String) -> Unit,
     shouldStartRecording: Boolean = false,
     onRecordingStarted: () -> Unit = {},
@@ -217,6 +218,7 @@ fun MainScreen(
                 onMultilingualToggled = { viewModel.setMultilingualEnabled(it) },
                 postProcessingEnabled = postProcessingEnabled,
                 onPostProcessingToggled = { viewModel.setPostProcessingEnabled(it) },
+                onNavigateToApiConfig = onNavigateToApiConfig,
                 modifier = Modifier.padding(paddingValues)
             )
         }

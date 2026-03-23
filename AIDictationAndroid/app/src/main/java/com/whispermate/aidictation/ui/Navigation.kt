@@ -17,6 +17,7 @@ import com.whispermate.aidictation.ui.screens.main.MainScreen
 import com.whispermate.aidictation.ui.screens.main.RecordingDetailScreen
 import com.whispermate.aidictation.ui.screens.onboarding.OnboardingScreen
 import com.whispermate.aidictation.ui.screens.onboarding.OnboardingViewModel
+import com.whispermate.aidictation.ui.screens.settings.ApiConfigScreen
 import com.whispermate.aidictation.ui.screens.transcription.TranscriptionSettingsScreen
 
 sealed class Screen(val route: String) {
@@ -24,6 +25,7 @@ sealed class Screen(val route: String) {
     data object Main : Screen("main")
     data object PostProcessingSettings : Screen("post_processing_settings")
     data object LanguageSettings : Screen("language_settings")
+    data object ApiConfig : Screen("api_config")
     data object RecordingDetail : Screen("recording_detail/{recordingId}") {
         fun createRoute(recordingId: String) = "recording_detail/$recordingId"
     }
@@ -74,6 +76,9 @@ fun AIDictationNavHost(
                 onNavigateToLanguageSettings = {
                     navController.navigate(Screen.LanguageSettings.route)
                 },
+                onNavigateToApiConfig = {
+                    navController.navigate(Screen.ApiConfig.route)
+                },
                 onNavigateToRecordingDetail = { recordingId ->
                     Log.d("Navigation", "Navigating to recording detail: $recordingId")
                     navController.navigate(Screen.RecordingDetail.createRoute(recordingId))
@@ -91,6 +96,12 @@ fun AIDictationNavHost(
 
         composable(Screen.LanguageSettings.route) {
             LanguageSettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.ApiConfig.route) {
+            ApiConfigScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
