@@ -82,8 +82,9 @@ jobs:
             -configuration Release \
             -archivePath /tmp/AIDictation.xcarchive \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=G7DJ6P37KU \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
             archive
 
       - name: Export with Developer ID signing
@@ -96,9 +97,11 @@ jobs:
               <key>method</key>
               <string>developer-id</string>
               <key>signingStyle</key>
-              <string>automatic</string>
-              <key>hardened runtime</key>
-              <true/>
+              <string>manual</string>
+              <key>signingCertificate</key>
+              <string>Developer ID Application</string>
+              <key>teamID</key>
+              <string>G7DJ6P37KU</string>
           </dict>
           </plist>
           PLIST
