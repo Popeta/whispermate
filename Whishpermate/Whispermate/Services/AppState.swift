@@ -118,7 +118,7 @@ class AppState: ObservableObject {
 
         // Capture screen context if enabled
         capturedScreenContext = nil
-        if await MainActor.run(body: { screenCaptureManager.includeScreenContext }) {
+        if screenCaptureManager.includeScreenContext {
             Task {
                 if let screenContext = await screenCaptureManager.captureAndExtractText() {
                     await MainActor.run {

@@ -17,8 +17,8 @@ class ScreenCaptureManager: ObservableObject {
 
     /// Whether to include screen context in LLM prompts
     /// This is now tied directly to screen recording permission
-    var includeScreenContext: Bool {
-        hasScreenRecordingPermission
+    nonisolated var includeScreenContext: Bool {
+        CGPreflightScreenCaptureAccess()
     }
 
     // MARK: - Initialization
