@@ -132,11 +132,13 @@ class ParakeetTranscriptionService: ObservableObject {
     }
 
     /// Cleanup resources
-    @MainActor func cleanup() {
+    func cleanup() {
         asrManager?.cleanup()
         asrManager = nil
         models = nil
-        state = .notInitialized
-        isModelDownloaded = false
+        Task { @MainActor in
+            self.state = .notInitialized
+            self.isModelDownloaded = false
+        }
     }
 }
