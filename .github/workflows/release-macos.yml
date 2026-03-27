@@ -204,6 +204,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add appcast.xml Whishpermate/Whispermate.xcodeproj/project.pbxproj
+          git add appcast.xml
+          git add -f Whishpermate/Whispermate.xcodeproj/project.pbxproj
           git commit -m "update appcast for v${VERSION} release"
           git push origin HEAD:main
