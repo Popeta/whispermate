@@ -11,19 +11,26 @@ struct OnboardingView: View {
     @State private var isCheckingAccessibility = false
     @State private var isCheckingMicrophone = false
     @State private var showChangeHotkey = false
+    @State private var showModelDownloadAlert = false
+    @State private var pendingMode: TranscriptionMode?
     @State private var fnKeyMonitor: FnKeyMonitor?
     @State private var fnKeyDetected = false
     @State private var fnKeyEverDetected = false
+    @ObservedObject var transcriptionProviderManager: TranscriptionProviderManager
+    @ObservedObject var parakeetService = ParakeetTranscriptionService.shared
+
     @State private var currentUIStep: OnboardingUIStep = .permissions
+    @State private var selectedOnboardingMode: TranscriptionMode = .cloud
     @State private var firstRecordingText = ""
     @FocusState private var isTestFieldFocused: Bool
 
     enum OnboardingUIStep: Int, CaseIterable {
         case permissions = 0
         case languages = 1
-        case hotkeyTest = 2
-        case firstRecording = 3
-        case complete = 4
+        case transcriptionMode = 2
+        case hotkeyTest = 3
+        case firstRecording = 4
+        case complete = 5
     }
 
     // Gradient colors
@@ -61,6 +68,26 @@ struct OnboardingView: View {
             hotkeyManager.setDeferRegistration(false)
             stopAllChecks()
         }
+        .alert("Download Offline Model", isPresented: $showModelDownloadAlert) {
+            Button("Download") {
+                if let mode = pendingMode {
+                    selectedOnboardingMode = mode
+                }
+                let service = parakeetService
+                Task {
+                    if case .error = await MainActor.run(body: { service.state }) {
+                        await MainActor.run { service.cleanup() }
+                    }
+                    try? await service.initialize()
+                }
+                pendingMode = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingMode = nil
+            }
+        } message: {
+            Text("Auto and Local modes require a one-time download of the offline model (~200 MB). Download now?")
+        }
     }
 
     // MARK: - Split Layout Screen
@@ -82,7 +109,7 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             // Step indicators
             HStack(spacing: 8) {
-                ForEach(0 ..< 4, id: \.self) { index in
+                ForEach(0 ..< 5, id: \.self) { index in
                     Circle()
                         .fill(index <= currentUIStep.rawValue ? accentOrange : Color.secondary.opacity(0.3))
                         .frame(width: 8, height: 8)
@@ -140,7 +167,7 @@ struct OnboardingView: View {
                         .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
                 }
                 .id(currentUIStep)
-                .offset(y: (currentUIStep == .languages || currentUIStep == .hotkeyTest) ? 0 : -geo.size.height * 0.1)
+                .offset(y: (currentUIStep == .languages || currentUIStep == .transcriptionMode || currentUIStep == .hotkeyTest) ? 0 : -geo.size.height * 0.1)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -172,6 +199,14 @@ struct OnboardingView: View {
             Image("OnboardingLanguages")
                 .resizable()
                 .frame(width: 391, height: 426)
+                .padding(40)
+
+        case .transcriptionMode:
+            Image(systemName: "waveform.badge.mic")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 160, height: 160)
+                .foregroundStyle(.white.opacity(0.5))
                 .padding(40)
 
         case .hotkeyTest:
@@ -214,6 +249,9 @@ struct OnboardingView: View {
 
         case .languages:
             languageContent
+
+        case .transcriptionMode:
+            transcriptionModeContent
 
         case .hotkeyTest:
             if showChangeHotkey {
@@ -310,6 +348,153 @@ struct OnboardingView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Transcription Mode Content
+
+    private var isParakeetReady: Bool {
+        if case .ready = parakeetService.state { return true }
+        return false
+    }
+
+    private var isParakeetDownloading: Bool {
+        switch parakeetService.state {
+        case .downloading, .initializing: return true
+        default: return false
+        }
+    }
+
+    private func modeStars(speed: Int, quality: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 2) {
+                Text("Speed")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .leading)
+                ForEach(0 ..< 4, id: \.self) { i in
+                    Image(systemName: i < speed ? "star.fill" : "star")
+                        .font(.caption2)
+                        .foregroundStyle(i < speed ? accentOrange : .secondary.opacity(0.4))
+                }
+            }
+            HStack(spacing: 2) {
+                Text("Quality")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .leading)
+                ForEach(0 ..< 4, id: \.self) { i in
+                    Image(systemName: i < quality ? "star.fill" : "star")
+                        .font(.caption2)
+                        .foregroundStyle(i < quality ? accentOrange : .secondary.opacity(0.4))
+                }
+            }
+        }
+    }
+
+    private func modeRating(for mode: TranscriptionMode) -> (speed: Int, quality: Int) {
+        switch mode {
+        case .cloud: return (speed: 3, quality: 4)
+        case .local: return (speed: 4, quality: 3)
+        case .auto: return (speed: 4, quality: 4)
+        }
+    }
+
+    private var transcriptionModeContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(TranscriptionMode.allCases, id: \.self) { mode in
+                let isSelected = selectedOnboardingMode == mode
+                let needsModel = mode != .cloud
+                let rating = modeRating(for: mode)
+
+                Button {
+                    if needsModel && !isParakeetReady && !isParakeetDownloading {
+                        pendingMode = mode
+                        showModelDownloadAlert = true
+                    } else {
+                        selectedOnboardingMode = mode
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundStyle(isSelected ? accentOrange : .secondary)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mode.displayName)
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                            Text(mode.description)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        modeStars(speed: rating.speed, quality: rating.quality)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(isSelected ? accentOrange.opacity(0.08) : Color(nsColor: .windowBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(isSelected ? accentOrange : Color.secondary.opacity(0.2), lineWidth: 1.5)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Model download status (only shown when actively downloading or ready)
+            switch parakeetService.state {
+            case .downloading:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Downloading offline model…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            case .initializing:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Initializing model…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            case .ready, .transcribing:
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Offline model ready")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            case .error(let message):
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Failed: \(message)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Button("Retry") {
+                        parakeetService.cleanup()
+                        Task { try? await parakeetService.initialize() }
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.top, 4)
+            default:
+                EmptyView()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Hotkey Test Content
@@ -554,6 +739,10 @@ struct OnboardingView: View {
                 return onboardingManager.isMicrophoneGranted() && onboardingManager.isAccessibilityGranted()
             case .languages:
                 return true
+            case .transcriptionMode:
+                if selectedOnboardingMode == .cloud { return true }
+                if case .ready = parakeetService.state { return true }
+                return false
             case .hotkeyTest:
                 return showChangeHotkey ? hotkeyManager.currentHotkey != nil : fnKeyEverDetected
             case .firstRecording:
@@ -590,6 +779,8 @@ struct OnboardingView: View {
             return "Set up AIDictation on your computer"
         case .languages:
             return "Select your languages"
+        case .transcriptionMode:
+            return "Choose transcription mode"
         case .hotkeyTest:
             return showChangeHotkey ? "Change hotkey" : "Test your dictation hotkey"
         case .firstRecording:
@@ -603,6 +794,8 @@ struct OnboardingView: View {
         switch currentUIStep {
         case .languages:
             return "Choose all languages you speak or select auto-detect."
+        case .transcriptionMode:
+            return "Select how your speech is transcribed. You can change this later in Settings."
         case .hotkeyTest:
             if showChangeHotkey {
                 return "Set your preferred key or key combination. You can always change this setting later on your Dashboard."
@@ -634,6 +827,9 @@ struct OnboardingView: View {
         case .permissions:
             currentUIStep = .languages
         case .languages:
+            currentUIStep = .transcriptionMode
+        case .transcriptionMode:
+            transcriptionProviderManager.setTranscriptionMode(selectedOnboardingMode)
             currentUIStep = .hotkeyTest
             startFnKeyMonitoring()
         case .hotkeyTest:

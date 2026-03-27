@@ -101,7 +101,12 @@ class HotkeyManager: ObservableObject {
     func setDeferRegistration(_ shouldDefer: Bool) {
         DebugLog.info("setDeferRegistration(\(shouldDefer)) - currentHotkey=\(currentHotkey?.displayString ?? "nil")", context: "HotkeyManager LOG")
         deferRegistration = shouldDefer
-        if !shouldDefer, currentHotkey != nil || commandHotkey != nil {
+        if shouldDefer {
+            // Unregister hotkey so the event tap doesn't consume events
+            // (e.g., during onboarding, FnKeyMonitor needs to see fn key events)
+            DebugLog.info("setDeferRegistration: Calling unregisterHotkey()", context: "HotkeyManager LOG")
+            unregisterHotkey()
+        } else if currentHotkey != nil || commandHotkey != nil {
             // Registration was deferred but now enabled - register the hotkey
             DebugLog.info("setDeferRegistration: Calling registerHotkey()", context: "HotkeyManager LOG")
             registerHotkey()

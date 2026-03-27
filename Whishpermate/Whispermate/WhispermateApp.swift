@@ -485,7 +485,8 @@ struct WhishpermateApp: App {
                 hotkeyManager: HotkeyManager.shared,
                 languageManager: LanguageManager.shared,
                 promptRulesManager: PromptRulesManager.shared,
-                llmProviderManager: LLMProviderManager.shared
+                llmProviderManager: LLMProviderManager.shared,
+                transcriptionProviderManager: AppState.shared.transcriptionProviderManager
             )
             .windowIdentifier(WindowIdentifiers.onboarding)
         }

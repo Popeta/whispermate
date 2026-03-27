@@ -106,6 +106,7 @@ struct SettingsView: View {
     @State private var selectedBillingPeriod: BillingPeriod = .monthly
     @State private var isCheckingPayment = false
     @State private var paymentCheckTask: Task<Void, Never>?
+    @State private var pendingTranscriptionMode: TranscriptionMode?
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -586,70 +587,95 @@ struct SettingsView: View {
                             Text("Transcription Mode")
                                 .dsFont(.body)
                                 .foregroundStyle(Color.dsForeground)
-                            Text(transcriptionProviderManager.isLocalMode
-                                ? "On-device, instant response, good quality"
-                                : "Cloud-based, slower response, excellent quality")
+                            Text(transcriptionProviderManager.transcriptionMode.description)
                                 .dsFont(.label)
                                 .foregroundStyle(Color.dsMutedForeground)
                         }
                         Spacer()
                         Picker("", selection: Binding(
-                            get: { transcriptionProviderManager.isLocalMode },
-                            set: { transcriptionProviderManager.isLocalMode = $0 }
+                            get: { transcriptionProviderManager.transcriptionMode },
+                            set: { newMode in
+                                let modelReady: Bool = {
+                                    if case .ready = parakeetService.state { return true }
+                                    return false
+                                }()
+                                if newMode != .cloud && !modelReady {
+                                    // Remember what the user wanted
+                                    pendingTranscriptionMode = newMode
+                                    // Force back to cloud until model is ready
+                                    transcriptionProviderManager.setTranscriptionMode(.cloud)
+                                    // Start downloading the model
+                                    let service = parakeetService
+                                    Task {
+                                        if case .error = await MainActor.run(body: { service.state }) {
+                                            await MainActor.run { service.cleanup() }
+                                        }
+                                        try? await service.initialize()
+                                    }
+                                    return
+                                }
+                                pendingTranscriptionMode = nil
+                                transcriptionProviderManager.setTranscriptionMode(newMode)
+                            }
                         )) {
-                            Text("Cloud").tag(false)
-                            Text("Local").tag(true)
+                            ForEach(TranscriptionMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
                         }
                         .pickerStyle(.segmented)
                         .fixedSize()
+                        .onChange(of: parakeetService.state.isReady) { ready in
+                            if ready, let pending = pendingTranscriptionMode {
+                                transcriptionProviderManager.setTranscriptionMode(pending)
+                                pendingTranscriptionMode = nil
+                            }
+                        }
                     }
                     .padding(.vertical, 2)
 
-                    // Parakeet model status (only when local is selected)
-                    if transcriptionProviderManager.isLocalMode {
-                        Divider()
-                            .padding(.vertical, 6)
+                    // Parakeet model status — always show so users can download to unlock Auto/Local
+                    Divider()
+                        .padding(.vertical, 6)
 
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Model Status")
-                                    .dsFont(.body)
-                                    .foregroundStyle(Color.dsForeground)
-                                Text(parakeetStatusText)
-                                    .dsFont(.label)
-                                    .foregroundStyle(parakeetStatusColor)
-                            }
-                            Spacer()
-
-                            switch parakeetService.state {
-                            case .notInitialized:
-                                Button("Download Model") {
-                                    Task {
-                                        try? await parakeetService.initialize()
-                                    }
-                                }
-                                .controlSize(.small)
-                            case .downloading, .initializing:
-                                ProgressView()
-                                    .controlSize(.small)
-                            case .ready, .transcribing:
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            case .error:
-                                Button("Retry") {
-                                    parakeetService.cleanup()
-                                    Task {
-                                        try? await parakeetService.initialize()
-                                    }
-                                }
-                                .controlSize(.small)
-                            }
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Local Model")
+                                .dsFont(.body)
+                                .foregroundStyle(Color.dsForeground)
+                            Text(parakeetStatusText)
+                                .dsFont(.label)
+                                .foregroundStyle(parakeetStatusColor)
                         }
-                        .padding(.vertical, 2)
+                        Spacer()
+
+                        switch parakeetService.state {
+                        case .notInitialized:
+                            Button("Download Model") {
+                                Task {
+                                    try? await parakeetService.initialize()
+                                }
+                            }
+                            .controlSize(.small)
+                        case .downloading, .initializing:
+                            ProgressView()
+                                .controlSize(.small)
+                        case .ready, .transcribing:
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        case .error:
+                            Button("Retry") {
+                                parakeetService.cleanup()
+                                Task {
+                                    try? await parakeetService.initialize()
+                                }
+                            }
+                            .controlSize(.small)
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: transcriptionProviderManager.isLocalMode)
+            .animation(.easeInOut(duration: 0.2), value: transcriptionProviderManager.transcriptionMode)
 
             // Overlay Settings Group
             SettingsCard {
@@ -1069,6 +1095,8 @@ struct SettingsView: View {
 
                             // Show LLM settings only when Custom LLM is selected
                             if transcriptionProviderManager.postProcessingProvider == .customLLM {
+                                let requiresApiKey = llmProviderManager.requiresAPIKeyEntry
+
                                 // LLM Provider picker
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -1089,38 +1117,73 @@ struct SettingsView: View {
                                     .fixedSize()
                                 }
 
-                                // LLM API Key
-                                HStack {
-                                    SecureField("Enter LLM API key", text: $llmApiKey)
-                                        .textFieldStyle(.roundedBorder)
+                                if llmProviderManager.selectedProvider == .custom {
+                                    HStack {
+                                        TextField("LLM endpoint", text: $customEndpoint)
+                                            .textFieldStyle(.roundedBorder)
+                                    }
 
-                                    Button("Save") {
-                                        KeychainHelper.save(
-                                            key: llmProviderManager.selectedProvider.apiKeyName,
-                                            value: llmApiKey
-                                        )
-                                        showingLLMKeySaved = true
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                            showingLLMKeySaved = false
+                                    HStack {
+                                        TextField("LLM model", text: $customModel)
+                                            .textFieldStyle(.roundedBorder)
+
+                                        Button("Save") {
+                                            llmProviderManager.saveCustomSettings(
+                                                endpoint: customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                model: customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            )
                                         }
                                     }
-                                    .controlSize(.small)
+                                } else if llmProviderManager.selectedProvider == .lfm25 {
+                                    Text("Uses Ollama at http://localhost:11434/v1/chat/completions with model hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF.")
+                                        .dsFont(.label)
+                                        .foregroundStyle(Color.dsMutedForeground)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
 
-                                    if showingLLMKeySaved {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
+                                if requiresApiKey {
+                                    // LLM API Key
+                                    HStack {
+                                        SecureField("Enter LLM API key", text: $llmApiKey)
+                                            .textFieldStyle(.roundedBorder)
+
+                                        Button("Save") {
+                                            KeychainHelper.save(
+                                                key: llmProviderManager.selectedProvider.apiKeyName,
+                                                value: llmApiKey
+                                            )
+                                            showingLLMKeySaved = true
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                                showingLLMKeySaved = false
+                                            }
+                                        }
+                                        .controlSize(.small)
+
+                                        if showingLLMKeySaved {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                        }
                                     }
+                                } else {
+                                    Text("No API key needed for local LLM endpoints.")
+                                        .dsFont(.label)
+                                        .foregroundStyle(Color.dsMutedForeground)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             } // end if customLLM
                         }
                     }
                 }
                 .onAppear {
+                    customEndpoint = llmProviderManager.customEndpoint
+                    customModel = llmProviderManager.customModel
                     llmApiKey = KeychainHelper.get(
                         key: llmProviderManager.selectedProvider.apiKeyName
                     ) ?? ""
                 }
                 .onChange(of: llmProviderManager.selectedProvider) { _ in
+                    customEndpoint = llmProviderManager.customEndpoint
+                    customModel = llmProviderManager.customModel
                     llmApiKey = KeychainHelper.get(
                         key: llmProviderManager.selectedProvider.apiKeyName
                     ) ?? ""

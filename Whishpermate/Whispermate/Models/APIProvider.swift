@@ -92,8 +92,32 @@ enum PostProcessingProvider: String, CaseIterable, Identifiable {
     static let aidictationModel = "openai/gpt-oss-20b"
 }
 
+/// User-facing transcription mode selection
+enum TranscriptionMode: String, CaseIterable {
+    case cloud  // Always cloud
+    case local  // Always on-device
+    case auto   // Cloud when online, local when offline
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .cloud: return "Cloud"
+        case .local: return "Local"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .auto: return "Cloud when online, local when offline"
+        case .cloud: return "Cloud-based, slower response, excellent quality"
+        case .local: return "On-device, instant response, good quality"
+        }
+    }
+}
+
 class TranscriptionProviderManager: ObservableObject {
     @Published var selectedProvider: TranscriptionProvider = .custom
+    @Published var transcriptionMode: TranscriptionMode = .auto
     @Published var customEndpoint: String = ""
     @Published var customModel: String = ""
     @Published var enableLLMPostProcessing: Bool = false
@@ -101,14 +125,14 @@ class TranscriptionProviderManager: ObservableObject {
 
     private enum Keys {
         static let selectedProvider = "transcriptionProvider"
+        static let transcriptionMode = "transcriptionMode"
     }
 
     /// Whether the user prefers on-device transcription
     var isLocalMode: Bool {
-        get { selectedProvider == .parakeet }
+        get { transcriptionMode == .local }
         set {
-            let provider: TranscriptionProvider = newValue ? .parakeet : .custom
-            setProvider(provider)
+            setTranscriptionMode(newValue ? .local : .cloud)
         }
     }
 
@@ -120,9 +144,37 @@ class TranscriptionProviderManager: ObservableObject {
         } else {
             selectedProvider = .custom
         }
+
+        if let savedMode = AppDefaults.shared.string(forKey: Keys.transcriptionMode),
+           let mode = TranscriptionMode(rawValue: savedMode)
+        {
+            transcriptionMode = mode
+        } else {
+            // Migrate from old provider-based selection
+            transcriptionMode = selectedProvider == .parakeet ? .local : .cloud
+        }
+
         enableLLMPostProcessing = false
         postProcessingProvider = .aidictation
-        DebugLog.info("Loaded: \(selectedProvider.displayName), LLM post-processing: \(enableLLMPostProcessing), post-processor: \(postProcessingProvider.displayName)", context: "TranscriptionProviderManager")
+        DebugLog.info("Loaded: \(selectedProvider.displayName), mode: \(transcriptionMode.displayName), LLM post-processing: \(enableLLMPostProcessing), post-processor: \(postProcessingProvider.displayName)", context: "TranscriptionProviderManager")
+    }
+
+    func setTranscriptionMode(_ mode: TranscriptionMode) {
+        transcriptionMode = mode
+        AppDefaults.shared.set(mode.rawValue, forKey: Keys.transcriptionMode)
+
+        // Keep selectedProvider in sync
+        switch mode {
+        case .local:
+            selectedProvider = .parakeet
+            AppDefaults.shared.set(TranscriptionProvider.parakeet.rawValue, forKey: Keys.selectedProvider)
+        case .cloud, .auto:
+            if selectedProvider == .parakeet {
+                selectedProvider = .custom
+                AppDefaults.shared.set(TranscriptionProvider.custom.rawValue, forKey: Keys.selectedProvider)
+            }
+        }
+        DebugLog.info("Set mode: \(mode.displayName), provider: \(selectedProvider.displayName)", context: "TranscriptionProviderManager")
     }
 
     func setProvider(_ provider: TranscriptionProvider) {
@@ -179,6 +231,7 @@ class TranscriptionProviderManager: ObservableObject {
 
 enum LLMProvider: String, CaseIterable, Identifiable {
     case groq
+    case lfm25
     case openai
     case anthropic
     case custom
@@ -188,6 +241,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .groq: return "Groq"
+        case .lfm25: return "LFM 2.5 (Ollama)"
         case .openai: return "OpenAI"
         case .anthropic: return "Anthropic"
         case .custom: return "Custom"
@@ -197,6 +251,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .groq: return "Fast LLM (GPT-OSS-20B)"
+        case .lfm25: return "Local Liquid AI via Ollama"
         case .openai: return "GPT-4o"
         case .anthropic: return "Claude"
         case .custom: return "OpenAI-compatible API"
@@ -206,6 +261,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
     var defaultEndpoint: String {
         switch self {
         case .groq: return "https://api.groq.com/openai/v1/chat/completions"
+        case .lfm25: return "http://localhost:11434/v1/chat/completions"
         case .openai: return "https://api.openai.com/v1/chat/completions"
         case .anthropic: return "https://api.anthropic.com/v1/messages"
         case .custom: return ""
@@ -215,6 +271,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .groq: return "openai/gpt-oss-120b"
+        case .lfm25: return "hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF"
         case .openai: return "gpt-4o"
         case .anthropic: return "claude-3-5-sonnet-20241022"
         case .custom: return ""
@@ -223,6 +280,15 @@ enum LLMProvider: String, CaseIterable, Identifiable {
 
     var apiKeyName: String {
         return "\(rawValue)_llm_api_key"
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .lfm25:
+            return false
+        case .groq, .openai, .anthropic, .custom:
+            return true
+        }
     }
 }
 
@@ -236,11 +302,24 @@ class LLMProviderManager: ObservableObject {
     @Published var customEndpoint: String = ""
     @Published var customModel: String = ""
 
+    private enum Keys {
+        static let selectedProvider = "selected_llm_provider"
+        static let customEndpoint = "llm_custom_endpoint"
+        static let customModel = "llm_custom_model"
+    }
+
     // MARK: - Initialization
 
     private init() {
-        // Always use .groq provider - no UserDefaults reading
-        selectedProvider = .groq
+        if let saved = AppDefaults.shared.string(forKey: Keys.selectedProvider),
+           let provider = LLMProvider(rawValue: saved)
+        {
+            selectedProvider = provider
+        } else {
+            selectedProvider = .groq
+        }
+        customEndpoint = AppDefaults.shared.string(forKey: Keys.customEndpoint) ?? ""
+        customModel = AppDefaults.shared.string(forKey: Keys.customModel) ?? ""
         DebugLog.info("Loaded: \(selectedProvider.displayName)", context: "LLMProviderManager")
     }
 
@@ -248,28 +327,61 @@ class LLMProviderManager: ObservableObject {
 
     func setProvider(_ provider: LLMProvider) {
         selectedProvider = provider
+        AppDefaults.shared.set(provider.rawValue, forKey: Keys.selectedProvider)
         DebugLog.info("Set provider: \(provider.displayName)", context: "LLMProviderManager")
     }
 
     func saveCustomSettings(endpoint: String, model: String) {
         customEndpoint = endpoint
         customModel = model
+        AppDefaults.shared.set(endpoint, forKey: Keys.customEndpoint)
+        AppDefaults.shared.set(model, forKey: Keys.customModel)
     }
 
     // MARK: - Computed Properties
 
     var effectiveEndpoint: String {
-        if !customEndpoint.isEmpty {
+        if selectedProvider == .custom, !customEndpoint.isEmpty {
             return customEndpoint
         }
         return selectedProvider.defaultEndpoint
     }
 
     var effectiveModel: String {
-        if !customModel.isEmpty {
+        if selectedProvider == .custom, !customModel.isEmpty {
             return customModel
         }
         return selectedProvider.defaultModel
+    }
+
+    var effectiveApiKey: String? {
+        if let secretKey = SecretsLoader.llmKey(for: selectedProvider), !secretKey.isEmpty {
+            return secretKey
+        }
+
+        if let storedKey = KeychainHelper.get(key: selectedProvider.apiKeyName), !storedKey.isEmpty {
+            return storedKey
+        }
+
+        if !selectedProvider.requiresAPIKey || isLoopbackEndpoint {
+            return "not-needed"
+        }
+
+        return nil
+    }
+
+    private var isLoopbackEndpoint: Bool {
+        guard let url = URL(string: effectiveEndpoint),
+              let host = url.host?.lowercased()
+        else {
+            return false
+        }
+
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    var requiresAPIKeyEntry: Bool {
+        return selectedProvider.requiresAPIKey && !isLoopbackEndpoint
     }
 }
 

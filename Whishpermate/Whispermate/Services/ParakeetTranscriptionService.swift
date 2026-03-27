@@ -17,6 +17,11 @@ class ParakeetTranscriptionService: ObservableObject {
         case ready
         case transcribing
         case error(String)
+
+        var isReady: Bool {
+            if case .ready = self { return true }
+            return false
+        }
     }
 
     // MARK: - Published Properties

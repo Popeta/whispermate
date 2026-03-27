@@ -56,7 +56,7 @@ class AppState: ObservableObject {
     private let overlayManager = OverlayWindowManager.shared
     private let vadSettingsManager = VADSettingsManager.shared
     private let onboardingManager = OnboardingManager.shared
-    private let transcriptionProviderManager = TranscriptionProviderManager()
+    let transcriptionProviderManager = TranscriptionProviderManager()
     private let llmProviderManager = LLMProviderManager.shared
     private let dictionaryManager = DictionaryManager.shared
     private let contextRulesManager = ContextRulesManager.shared
@@ -513,8 +513,31 @@ class AppState: ObservableObject {
             promptComponents.append(instructions)
         }
 
-        let provider = transcriptionProviderManager.selectedProvider
-        DebugLog.info("Selected transcription provider: \(provider.displayName), isOnDevice: \(provider.isOnDevice)", context: "AppState")
+        let mode = transcriptionProviderManager.transcriptionMode
+        var provider = transcriptionProviderManager.selectedProvider
+        DebugLog.info("Transcription mode: \(mode.displayName), provider: \(provider.displayName), isOnDevice: \(provider.isOnDevice)", context: "AppState")
+
+        // Auto mode: use cloud when online, fall back to local when offline
+        if mode == .auto, !provider.isOnDevice, !NetworkMonitor.shared.isConnected {
+            let parakeetState = await MainActor.run { ParakeetTranscriptionService.shared.state }
+            switch parakeetState {
+            case .ready, .transcribing:
+                DebugLog.info("Auto mode: network unavailable - using on-device Parakeet", context: "AppState")
+                provider = .parakeet
+            case .notInitialized, .error:
+                // Try to initialize Parakeet (model may be cached from a previous download)
+                DebugLog.info("Auto mode: network unavailable, initializing Parakeet for fallback", context: "AppState")
+                do {
+                    try await ParakeetTranscriptionService.shared.initialize()
+                    DebugLog.info("Auto mode: Parakeet initialized - using on-device", context: "AppState")
+                    provider = .parakeet
+                } catch {
+                    DebugLog.error("Auto mode: Parakeet init failed (\(error.localizedDescription)) - attempting cloud", context: "AppState")
+                }
+            case .downloading, .initializing:
+                DebugLog.info("Auto mode: network unavailable, Parakeet still loading - attempting cloud", context: "AppState")
+            }
+        }
 
         if provider == .custom {
             DebugLog.info("Using Custom (AIDictation) provider - server handles formatting", context: "AppState")
@@ -656,19 +679,7 @@ class AppState: ObservableObject {
     }
 
     private func resolvedLLMApiKey() -> String? {
-        let provider = llmProviderManager.selectedProvider
-
-        // Check Secrets.plist first
-        if let secretKey = SecretsLoader.llmKey(for: provider), !secretKey.isEmpty {
-            return secretKey
-        }
-
-        // Then check keychain
-        if let storedKey = KeychainHelper.get(key: provider.apiKeyName), !storedKey.isEmpty {
-            return storedKey
-        }
-
-        return nil
+        return llmProviderManager.effectiveApiKey
     }
 
     // MARK: - Dictation Result Processing

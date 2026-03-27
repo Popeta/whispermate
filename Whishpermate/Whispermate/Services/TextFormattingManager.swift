@@ -18,7 +18,7 @@ class TextFormattingManager {
             transcriptionModel: transcriptionProviderManager.effectiveModel,
             chatCompletionEndpoint: llmProviderManager.effectiveEndpoint,
             chatCompletionModel: llmProviderManager.effectiveModel,
-            apiKey: KeychainHelper.get(key: llmProviderManager.selectedProvider.apiKeyName) ?? ""
+            apiKey: llmProviderManager.effectiveApiKey ?? ""
         )
 
         openAIClient = OpenAIClient(config: config)
