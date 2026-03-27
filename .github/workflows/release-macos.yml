@@ -127,14 +127,23 @@ jobs:
           xcrun stapler staple /tmp/AIDictation-export/AIDictation.app
           rm /tmp/AIDictation-notarize.zip
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Create DMG
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          hdiutil create \
-            -volname "AIDictation" \
-            -srcfolder /tmp/AIDictation-export/AIDictation.app \
-            -ov -format UDZO \
-            /tmp/AIDictation-v${VERSION}.dmg
+          create-dmg \
+            --volname "AIDictation" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 160 \
+            --icon "AIDictation.app" 180 170 \
+            --hide-extension "AIDictation.app" \
+            --app-drop-link 480 170 \
+            --no-internet-enable \
+            /tmp/AIDictation-v${VERSION}.dmg \
+            /tmp/AIDictation-export/AIDictation.app
 
       - name: Notarize and staple DMG
         env:
