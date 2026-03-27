@@ -179,7 +179,9 @@ class StatusBarManager {
     }
 
     @objc private func checkForUpdates() {
-        UpdateManager.shared.checkForUpdates()
+        Task { @MainActor in
+            UpdateManager.shared.checkForUpdates()
+        }
     }
 
     @objc private func showOnboarding() {
