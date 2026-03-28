@@ -205,6 +205,11 @@ jobs:
           with open("appcast.xml") as f:
               content = f.read()
 
+          # Remove existing entries for this version (in case of re-release)
+          import re as _re
+          pattern = r'\s*<item>\s*\n\s*<title>AIDictation ' + _re.escape(version) + r'</title>.*?</item>'
+          content = _re.sub(pattern, '', content, flags=_re.DOTALL)
+
           # Insert as the first <item> in the feed
           content = content.replace("        <item>", new_item + "\n        <item>", 1)
 
