@@ -2,6 +2,7 @@ package com.whispermate.aidictation.data.remote
 
 import android.util.Log
 import com.whispermate.aidictation.BuildConfig
+import com.whispermate.aidictation.data.preferences.ApiConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -33,9 +34,12 @@ Output: you, your, ya"""
 
     suspend fun getSuggestions(text: String, isCompletingWord: Boolean): Result<List<String>> = withContext(Dispatchers.IO) {
         try {
-            val apiKey = BuildConfig.GROQ_API_KEY
+            val config = ApiConfigManager.instance?.getPostProcessingConfig()
+            val apiKey = config?.apiKey ?: BuildConfig.GROQ_API_KEY
+            val endpoint = config?.endpoint ?: BuildConfig.GROQ_ENDPOINT
+            val model = config?.model ?: BuildConfig.GROQ_MODEL
             if (apiKey.isEmpty()) {
-                return@withContext Result.failure(Exception("Groq API key not configured"))
+                return@withContext Result.failure(Exception("Post-processing API key not configured"))
             }
 
             if (text.isBlank()) {
@@ -43,7 +47,7 @@ Output: you, your, ya"""
             }
 
             val requestJson = JSONObject().apply {
-                put("model", BuildConfig.GROQ_MODEL)
+                put("model", model)
                 put("messages", JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
@@ -61,7 +65,7 @@ Output: you, your, ya"""
             }
 
             val request = Request.Builder()
-                .url(BuildConfig.GROQ_ENDPOINT)
+                .url(endpoint)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .post(requestJson.toString().toRequestBody("application/json".toMediaType()))

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="start_dictation"
+        android:enabled="true"
+        android:icon="@drawable/ic_mic_toolbar"
+        android:shortcutShortLabel="@string/shortcut_start_dictation"
+        android:shortcutLongLabel="@string/shortcut_start_dictation">
+        <intent
+            android:action="com.whispermate.aidictation.action.START_DICTATION"
+            android:targetPackage="com.whispermate.aidictation"
+            android:targetClass="com.whispermate.aidictation.ShortcutActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

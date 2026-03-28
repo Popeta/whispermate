@@ -2,6 +2,7 @@ package com.whispermate.aidictation.data.remote
 
 import android.util.Log
 import com.whispermate.aidictation.BuildConfig
+import com.whispermate.aidictation.data.preferences.ApiConfigManager
 import com.whispermate.aidictation.domain.model.Command
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,9 +45,12 @@ object CommandClient {
         additionalInstructions: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val apiKey = BuildConfig.GROQ_API_KEY
+            val apiConfig = ApiConfigManager.instance?.getPostProcessingConfig()
+            val apiKey = apiConfig?.apiKey ?: BuildConfig.GROQ_API_KEY
+            val endpoint = apiConfig?.endpoint ?: BuildConfig.GROQ_ENDPOINT
+            val model = apiConfig?.model ?: BuildConfig.GROQ_MODEL
             if (apiKey.isEmpty()) {
-                return@withContext Result.failure(Exception("Groq API key not configured"))
+                return@withContext Result.failure(Exception("Post-processing API key not configured"))
             }
 
             if (targetText.isBlank()) {
@@ -70,7 +74,7 @@ object CommandClient {
             }
 
             val requestJson = JSONObject().apply {
-                put("model", BuildConfig.GROQ_MODEL)
+                put("model", model)
                 put("messages", JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
@@ -89,7 +93,7 @@ object CommandClient {
             Log.d(TAG, "Executing command '${command.name}' on text: ${targetText.take(50)}...")
 
             val request = Request.Builder()
-                .url(BuildConfig.GROQ_ENDPOINT)
+                .url(endpoint)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
@@ -138,9 +142,12 @@ object CommandClient {
         additionalInstructions: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val apiKey = BuildConfig.GROQ_API_KEY
+            val apiConfig = ApiConfigManager.instance?.getPostProcessingConfig()
+            val apiKey = apiConfig?.apiKey ?: BuildConfig.GROQ_API_KEY
+            val endpoint = apiConfig?.endpoint ?: BuildConfig.GROQ_ENDPOINT
+            val model = apiConfig?.model ?: BuildConfig.GROQ_MODEL
             if (apiKey.isEmpty()) {
-                return@withContext Result.failure(Exception("Groq API key not configured"))
+                return@withContext Result.failure(Exception("Post-processing API key not configured"))
             }
 
             if (targetText.isBlank()) {
@@ -168,7 +175,7 @@ object CommandClient {
             }
 
             val requestJson = JSONObject().apply {
-                put("model", BuildConfig.GROQ_MODEL)
+                put("model", model)
                 put("messages", JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
@@ -187,7 +194,7 @@ object CommandClient {
             Log.d(TAG, "Executing instruction '$instruction' on text: ${targetText.take(50)}...")
 
             val request = Request.Builder()
-                .url(BuildConfig.GROQ_ENDPOINT)
+                .url(endpoint)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .post(requestJson.toString().toRequestBody("application/json".toMediaType()))

@@ -2,6 +2,7 @@ package com.whispermate.aidictation.data.remote
 
 import android.util.Log
 import com.whispermate.aidictation.BuildConfig
+import com.whispermate.aidictation.data.preferences.ApiConfigManager
 import com.whispermate.aidictation.domain.model.Command
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -41,10 +42,13 @@ object TranscriptionClient {
 
     suspend fun transcribe(audioFile: File, prompt: String? = null, language: String? = null): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val apiKey = BuildConfig.TRANSCRIPTION_API_KEY
+            val config = ApiConfigManager.instance?.getTranscriptionConfig()
+            val apiKey = config?.apiKey ?: BuildConfig.TRANSCRIPTION_API_KEY
+            val endpoint = config?.endpoint ?: BuildConfig.TRANSCRIPTION_ENDPOINT
+            val model = config?.model ?: BuildConfig.TRANSCRIPTION_MODEL
             Log.d(TAG, "Transcribing file: ${audioFile.absolutePath}, size: ${audioFile.length()} bytes")
-            Log.d(TAG, "Endpoint: ${BuildConfig.TRANSCRIPTION_ENDPOINT}")
-            Log.d(TAG, "Model: ${BuildConfig.TRANSCRIPTION_MODEL}")
+            Log.d(TAG, "Endpoint: $endpoint")
+            Log.d(TAG, "Model: $model")
 
             if (apiKey.isEmpty()) {
                 Log.e(TAG, "API key is empty!")
@@ -58,7 +62,7 @@ object TranscriptionClient {
                     audioFile.name,
                     audioFile.asRequestBody("audio/m4a".toMediaType())
                 )
-                .addFormDataPart("model", BuildConfig.TRANSCRIPTION_MODEL)
+                .addFormDataPart("model", model)
                 .addFormDataPart("temperature", "0")
                 .addFormDataPart("response_format", "json")
                 .apply {
@@ -74,7 +78,7 @@ object TranscriptionClient {
                 .build()
 
             val request = Request.Builder()
-                .url(BuildConfig.TRANSCRIPTION_ENDPOINT)
+                .url(endpoint)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .post(requestBody)
                 .build()

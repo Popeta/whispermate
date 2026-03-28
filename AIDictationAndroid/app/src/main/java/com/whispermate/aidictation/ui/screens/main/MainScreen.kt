@@ -65,7 +65,10 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     onNavigateToPostProcessingSettings: () -> Unit,
     onNavigateToLanguageSettings: () -> Unit,
+    onNavigateToApiConfig: () -> Unit,
     onNavigateToRecordingDetail: (String) -> Unit,
+    shouldStartRecording: Boolean = false,
+    onRecordingStarted: () -> Unit = {},
     viewModel: MainViewModel = hiltViewModel()
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -89,6 +92,37 @@ fun MainScreen(
         error?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
+        }
+    }
+
+    // Handle external start recording trigger
+    LaunchedEffect(Unit) {
+        viewModel.startRecordingTrigger.collect {
+            if (recordingState == RecordingState.Idle) {
+                val recorder = AudioRecorder(context)
+                audioRecorder = recorder
+                val file = recorder.start()
+                if (file != null) {
+                    viewModel.startRecording()
+                } else {
+                    audioRecorder = null
+                }
+            }
+        }
+    }
+
+    // Handle initial start recording from navigation
+    LaunchedEffect(shouldStartRecording) {
+        if (shouldStartRecording && recordingState == RecordingState.Idle) {
+            val recorder = AudioRecorder(context)
+            audioRecorder = recorder
+            val file = recorder.start()
+            if (file != null) {
+                viewModel.startRecording()
+            } else {
+                audioRecorder = null
+            }
+            onRecordingStarted()
         }
     }
 
@@ -184,6 +218,7 @@ fun MainScreen(
                 onMultilingualToggled = { viewModel.setMultilingualEnabled(it) },
                 postProcessingEnabled = postProcessingEnabled,
                 onPostProcessingToggled = { viewModel.setPostProcessingEnabled(it) },
+                onNavigateToApiConfig = onNavigateToApiConfig,
                 modifier = Modifier.padding(paddingValues)
             )
         }
