@@ -41,3 +41,6 @@ Pods/
 secrets.json
 Whishpermate/Whispermate/Secrets.plist
 Whishpermate/WhisperMateIOS/Secrets.plist
+
+# Claude Code
+.claude/

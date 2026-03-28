@@ -1,0 +1,70 @@
+package com.whispermate.aidictation.ui.screens.language
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.whispermate.aidictation.data.preferences.AppPreferences
+import com.whispermate.aidictation.domain.model.WhisperLanguage
+import com.whispermate.aidictation.domain.model.WhisperLanguages
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+data class LanguageItem(
+    val language: WhisperLanguage,
+    val isSelected: Boolean
+)
+
+@HiltViewModel
+class LanguageSettingsViewModel @Inject constructor(
+    private val appPreferences: AppPreferences
+) : ViewModel() {
+
+    val searchQuery = MutableStateFlow("")
+
+    private val initialOrdering = MutableStateFlow<Set<String>?>(null)
+
+    init {
+        viewModelScope.launch {
+            initialOrdering.value = appPreferences.selectedLanguages.first().toSet()
+        }
+    }
+
+    val languages: StateFlow<List<LanguageItem>> = combine(
+        appPreferences.selectedLanguages,
+        searchQuery,
+        initialOrdering
+    ) { selected, query, initial ->
+        val selectedSet = selected.toSet()
+        val orderingSet = initial ?: selectedSet
+        WhisperLanguages.all
+            .filter { lang ->
+                if (query.isBlank()) true
+                else lang.englishName.contains(query, ignoreCase = true) ||
+                    lang.nativeName.contains(query, ignoreCase = true)
+            }
+            .sortedWith(compareByDescending { it.code in orderingSet })
+            .map { lang -> LanguageItem(lang, lang.code in selectedSet) }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    fun toggleLanguage(code: String) {
+        viewModelScope.launch {
+            val current = appPreferences.selectedLanguages.first().toMutableList()
+            if (current.contains(code)) {
+                current.remove(code)
+            } else {
+                current.add(code)
+            }
+            appPreferences.saveSelectedLanguages(current)
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        searchQuery.value = query
+    }
+}

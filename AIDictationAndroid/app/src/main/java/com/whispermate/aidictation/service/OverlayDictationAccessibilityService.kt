@@ -39,6 +39,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -105,6 +106,9 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private lateinit var appPreferences: AppPreferences
+    private val transcriptionRepository by lazy {
+        com.whispermate.aidictation.data.repository.TranscriptionRepository(appPreferences)
+    }
     private lateinit var windowManager: WindowManager
 
     private var bubbleView: CircularMicButtonView? = null
@@ -995,24 +999,25 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
         val contextRules = appPreferences.getInstructionsForApp(lastFocusedPackage)
         val enabledCommands = appPreferences.getEnabledCommands()
 
-        val transcriptionPrompt = buildString {
-            if (contextText.isNotEmpty()) {
-                append(contextText)
-            }
-            if (!contextRules.isNullOrBlank()) {
-                if (isNotEmpty()) append("\n\n")
-                append("Instructions: ")
-                append(contextRules)
-            }
-        }.ifEmpty { null }
+        // Build Whisper prompt: dictionary/shortcut hints + cursor context (NO context rules)
+        val repoPrompt = transcriptionRepository.buildPrompt()
+        val whisperPrompt = listOfNotNull(
+            contextText.ifEmpty { null },
+            repoPrompt.ifEmpty { null }
+        ).joinToString("\n\n").ifEmpty { null }
 
-        val result = TranscriptionClient.transcribeWithCommands(
-            audioFile = audioFile,
-            prompt = transcriptionPrompt,
-            contextText = lastDictatedText,
-            commands = enabledCommands,
-            additionalInstructions = contextRules
-        )
+        Log.d("OverlayDictation", "Whisper prompt: $whisperPrompt, contextRules: $contextRules")
+
+        // Transcription + LLM post-processing (context rules go to LLM, not Whisper)
+        val rawText = transcriptionRepository.transcribe(audioFile, whisperPrompt, contextRules)
+            .getOrElse { e ->
+                Log.e("OverlayDictation", "Transcription failed", e)
+                return
+            }
+
+        // Command detection and execution (separate from transcription)
+        val result: Result<com.whispermate.aidictation.data.remote.TranscriptionResult> =
+            TranscriptionClient.detectAndExecuteCommands(rawText, lastDictatedText, enabledCommands, contextRules)
 
         result.onSuccess { transcription ->
             if (transcription.text.isBlank()) return@onSuccess
@@ -1045,7 +1050,9 @@ class OverlayDictationAccessibilityService : AccessibilityService() {
             return
         }
 
-        val transcriptionResult = TranscriptionClient.transcribe(audioFile = audioFile, prompt = null)
+        val selectedLangs = appPreferences.selectedLanguages.first()
+        val rewriteLang = if (selectedLangs.size == 1) selectedLangs.first() else null
+        val transcriptionResult = TranscriptionClient.transcribe(audioFile = audioFile, prompt = null, language = rewriteLang)
         transcriptionResult.onSuccess { instruction ->
             if (instruction.isBlank()) {
                 Toast.makeText(

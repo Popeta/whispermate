@@ -80,7 +80,7 @@ fun TranscriptionSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_transcription_settings)) },
+                title = { Text(stringResource(R.string.settings_post_processing_settings)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(

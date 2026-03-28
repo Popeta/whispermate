@@ -2,6 +2,7 @@ package com.whispermate.aidictation.ui.screens.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whispermate.aidictation.data.preferences.AppPreferences
 import com.whispermate.aidictation.data.repository.RecordingRepository
 import com.whispermate.aidictation.data.repository.TranscriptionRepository
 import com.whispermate.aidictation.domain.model.Recording
@@ -24,11 +25,30 @@ enum class RecordingState {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val recordingRepository: RecordingRepository,
-    private val transcriptionRepository: TranscriptionRepository
+    private val transcriptionRepository: TranscriptionRepository,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     val recordings: StateFlow<List<Recording>> = recordingRepository.recordings
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val multilingualEnabled: StateFlow<Boolean> = appPreferences.multilingualEnabled
+        .stateIn(viewModelScope, SharingStarted.Lazily, true)
+
+    val postProcessingEnabled: StateFlow<Boolean> = appPreferences.postProcessingEnabled
+        .stateIn(viewModelScope, SharingStarted.Lazily, true)
+
+    fun setMultilingualEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setMultilingualEnabled(enabled)
+        }
+    }
+
+    fun setPostProcessingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setPostProcessingEnabled(enabled)
+        }
+    }
 
     // Recording state for inline recording
     private val _recordingState = MutableStateFlow(RecordingState.Idle)
@@ -56,7 +76,8 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             val prompt = transcriptionRepository.buildPrompt()
-            val result = transcriptionRepository.transcribe(audioFile, prompt.ifEmpty { null })
+            val contextRules = appPreferences.getInstructionsForApp(null)
+            val result = transcriptionRepository.transcribe(audioFile, prompt.ifEmpty { null }, contextRules)
 
             result.fold(
                 onSuccess = { rawText ->

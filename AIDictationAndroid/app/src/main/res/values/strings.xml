@@ -41,11 +41,17 @@
     <string name="back">Back</string>
 
     <!-- Settings -->
+    <string name="settings_languages">Languages</string>
+    <string name="settings_multilingual_mode">Multilingual mode</string>
+    <string name="settings_post_processing">Post-processing</string>
+    <string name="language_search_hint">Search languages…</string>
+    <string name="language_selection_hint">Select languages you speak. Limits transcription to only those languages.</string>
+    <string name="language_no_results">No languages found</string>
     <string name="settings_permissions">Permissions</string>
     <string name="settings_microphone">Microphone Access</string>
     <string name="settings_overlay_access">Overlay Accessibility</string>
     <string name="settings_transcription">Transcription</string>
-    <string name="settings_transcription_settings">Transcription Settings</string>
+    <string name="settings_post_processing_settings">Post-processing Settings</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version</string>
     <string name="settings_data">Data</string>

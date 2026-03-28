@@ -20,19 +20,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,7 +61,12 @@ import com.whispermate.aidictation.service.OverlayDictationAccessibilityService
 fun SettingsScreen(
     recordings: List<Recording>,
     onClearHistory: () -> Unit,
-    onNavigateToTranscriptionSettings: () -> Unit,
+    onNavigateToPostProcessingSettings: () -> Unit,
+    onNavigateToLanguageSettings: () -> Unit,
+    multilingualEnabled: Boolean = true,
+    onMultilingualToggled: (Boolean) -> Unit = {},
+    postProcessingEnabled: Boolean = true,
+    onPostProcessingToggled: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -121,14 +130,59 @@ fun SettingsScreen(
             )
         ) {
             SettingsItem(
-                icon = Icons.Default.Settings,
-                title = stringResource(R.string.settings_transcription_settings),
-                onClick = onNavigateToTranscriptionSettings,
+                icon = Icons.Default.Translate,
+                title = stringResource(R.string.settings_multilingual_mode),
+                trailingContent = {
+                    Switch(
+                        checked = multilingualEnabled,
+                        onCheckedChange = onMultilingualToggled
+                    )
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            SettingsItem(
+                icon = Icons.Default.Language,
+                title = stringResource(R.string.settings_languages),
+                onClick = onNavigateToLanguageSettings,
+                enabled = multilingualEnabled,
                 trailingContent = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (multilingualEnabled) MaterialTheme.colorScheme.onSurfaceVariant
+                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            SettingsItem(
+                icon = Icons.Default.AutoAwesome,
+                title = stringResource(R.string.settings_post_processing),
+                trailingContent = {
+                    Switch(
+                        checked = postProcessingEnabled,
+                        onCheckedChange = onPostProcessingToggled
+                    )
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            SettingsItem(
+                icon = Icons.Default.Settings,
+                title = stringResource(R.string.settings_post_processing_settings),
+                onClick = onNavigateToPostProcessingSettings,
+                enabled = postProcessingEnabled,
+                trailingContent = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = if (postProcessingEnabled) MaterialTheme.colorScheme.onSurfaceVariant
+                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                     )
                 }
             )

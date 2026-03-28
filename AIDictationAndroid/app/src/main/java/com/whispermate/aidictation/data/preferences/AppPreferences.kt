@@ -36,6 +36,48 @@ class AppPreferences @Inject constructor(
         val SHORTCUTS = stringPreferencesKey("shortcuts")
         val COMMANDS = stringPreferencesKey("commands")
         val API_KEY = stringPreferencesKey("api_key")
+        val SELECTED_LANGUAGES = stringPreferencesKey("selected_languages")
+        val MULTILINGUAL_ENABLED = booleanPreferencesKey("multilingual_enabled")
+        val POST_PROCESSING_ENABLED = booleanPreferencesKey("post_processing_enabled")
+    }
+
+    // Selected Languages
+    private val stringListType = Types.newParameterizedType(List::class.java, String::class.java)
+    private val stringListAdapter = moshi.adapter<List<String>>(stringListType)
+
+    val selectedLanguages: Flow<List<String>> = context.dataStore.data.map { preferences ->
+        val json = preferences[Keys.SELECTED_LANGUAGES]
+        if (json.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            stringListAdapter.fromJson(json) ?: emptyList()
+        }
+    }
+
+    suspend fun saveSelectedLanguages(languages: List<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.SELECTED_LANGUAGES] = stringListAdapter.toJson(languages)
+        }
+    }
+
+    val multilingualEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[Keys.MULTILINGUAL_ENABLED] ?: true
+    }
+
+    suspend fun setMultilingualEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.MULTILINGUAL_ENABLED] = enabled
+        }
+    }
+
+    val postProcessingEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[Keys.POST_PROCESSING_ENABLED] ?: true
+    }
+
+    suspend fun setPostProcessingEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.POST_PROCESSING_ENABLED] = enabled
+        }
     }
 
     // Onboarding

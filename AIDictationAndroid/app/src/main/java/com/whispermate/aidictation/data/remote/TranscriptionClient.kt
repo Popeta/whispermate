@@ -4,6 +4,8 @@ import android.util.Log
 import com.whispermate.aidictation.BuildConfig
 import com.whispermate.aidictation.domain.model.Command
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -37,7 +39,7 @@ object TranscriptionClient {
             .build()
     }
 
-    suspend fun transcribe(audioFile: File, prompt: String? = null): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun transcribe(audioFile: File, prompt: String? = null, language: String? = null): Result<String> = withContext(Dispatchers.IO) {
         try {
             val apiKey = BuildConfig.TRANSCRIPTION_API_KEY
             Log.d(TAG, "Transcribing file: ${audioFile.absolutePath}, size: ${audioFile.length()} bytes")
@@ -63,6 +65,10 @@ object TranscriptionClient {
                     if (!prompt.isNullOrEmpty()) {
                         addFormDataPart("prompt", prompt)
                         Log.d(TAG, "Prompt: $prompt")
+                    }
+                    if (!language.isNullOrEmpty()) {
+                        addFormDataPart("language", language)
+                        Log.d(TAG, "Language: $language")
                     }
                 }
                 .build()
@@ -97,93 +103,79 @@ object TranscriptionClient {
     }
 
     /**
-     * Transcribe audio with voice command detection and execution.
-     *
-     * @param audioFile The audio file to transcribe
-     * @param prompt Optional transcription prompt/context
-     * @param contextText Text before cursor (for command execution)
-     * @param commands List of enabled commands to detect
-     * @param additionalInstructions Optional additional instructions for command execution
-     * @return TranscriptionResult with text and optional executed command ID
+     * Transcribes the audio once per language in parallel.
+     * Each call forces Whisper to a specific language, yielding the best possible
+     * transcription for that language. Returns a map of languageCode → transcription
+     * for successful calls only.
      */
-    suspend fun transcribeWithCommands(
+    suspend fun transcribeForLanguages(
         audioFile: File,
-        prompt: String? = null,
+        languages: List<String>,
+        prompt: String? = null
+    ): Map<String, String> = coroutineScope {
+        Log.d(TAG, "=== Parallel transcription for languages: $languages ===")
+        val deferred = languages.map { lang ->
+            lang to async(Dispatchers.IO) { transcribe(audioFile, prompt, lang) }
+        }
+        val results = deferred.mapNotNull { (lang, job) ->
+            job.await().getOrNull()?.let { lang to it }
+        }.toMap()
+        Log.d(TAG, "Parallel results: ${results.entries.joinToString { (lang, text) -> "$lang → \"$text\"" }}")
+
+        // If all forced-language calls returned empty, fall back to auto-detect.
+        // Forcing a language makes Whisper conservative — it may return empty rather
+        // than transcribe audio that doesn't clearly match the forced language.
+        if (results.values.all { it.isBlank() }) {
+            Log.d(TAG, "All forced-language results empty, trying auto-detect fallback")
+            val fallback = transcribe(audioFile, prompt, null).getOrNull()
+            if (!fallback.isNullOrBlank()) {
+                Log.d(TAG, "Auto-detect fallback result: $fallback")
+                return@coroutineScope mapOf(languages.first() to fallback)
+            }
+            Log.d(TAG, "Auto-detect fallback also empty — audio may be silence")
+        }
+
+        results
+    }
+
+    /**
+     * Detects voice command triggers in already-transcribed text and executes the matched command.
+     * Use this after transcription (and optional LLM post-processing) to preserve command support.
+     */
+    suspend fun detectAndExecuteCommands(
+        rawText: String,
         contextText: String = "",
         commands: List<Command>,
         additionalInstructions: String? = null
-    ): Result<TranscriptionResult> = withContext(Dispatchers.IO) {
-        try {
-            // First, transcribe the audio normally
-            val transcriptionResult = transcribe(audioFile, prompt)
+    ): Result<TranscriptionResult> {
+        if (rawText.isBlank()) return Result.success(TranscriptionResult(rawText))
 
-            transcriptionResult.fold(
-                onSuccess = { rawText ->
-                    if (rawText.isBlank()) {
-                        return@withContext Result.success(TranscriptionResult(rawText))
-                    }
+        val detectedCommand = detectCommand(rawText, commands)
+        if (detectedCommand != null) {
+            Log.d(TAG, "Detected voice command: ${detectedCommand.first.name}")
+            val textBeforeCommand = detectedCommand.second.trim()
+            val targetText = textBeforeCommand.ifEmpty { contextText.trim() }
 
-                    // Check if the transcription ends with a voice command trigger
-                    val detectedCommand = detectCommand(rawText, commands)
+            if (targetText.isEmpty()) {
+                return Result.success(TranscriptionResult(rawText, originalTranscription = rawText))
+            }
 
-                    if (detectedCommand != null) {
-                        Log.d(TAG, "Detected voice command: ${detectedCommand.first.name}")
-
-                        // Extract the text before the command trigger
-                        val textBeforeCommand = detectedCommand.second.trim()
-
-                        // Combine with context - the command operates on context + text before trigger
-                        val targetText = if (textBeforeCommand.isNotEmpty()) {
-                            textBeforeCommand
-                        } else {
-                            // If no text before command, use the context text (last dictation)
-                            contextText.trim()
-                        }
-
-                        if (targetText.isEmpty()) {
-                            // No text to execute command on, return raw transcription
-                            Log.d(TAG, "No target text for command, returning raw transcription")
-                            return@withContext Result.success(
-                                TranscriptionResult(rawText, originalTranscription = rawText)
-                            )
-                        }
-
-                        // Execute the command
-                        val commandResult = CommandClient.execute(
-                            command = detectedCommand.first,
-                            targetText = targetText,
-                            context = if (textBeforeCommand.isNotEmpty()) contextText else "",
-                            additionalInstructions = additionalInstructions
-                        )
-
-                        commandResult.fold(
-                            onSuccess = { transformedText ->
-                                Result.success(
-                                    TranscriptionResult(
-                                        text = transformedText,
-                                        executedCommand = detectedCommand.first.id,
-                                        originalTranscription = rawText
-                                    )
-                                )
-                            },
-                            onFailure = { error ->
-                                Log.e(TAG, "Command execution failed", error)
-                                // Return raw transcription on command failure
-                                Result.success(TranscriptionResult(rawText, originalTranscription = rawText))
-                            }
-                        )
-                    } else {
-                        // No command detected, return normal transcription
-                        Result.success(TranscriptionResult(rawText, originalTranscription = rawText))
-                    }
+            val commandResult = CommandClient.execute(
+                command = detectedCommand.first,
+                targetText = targetText,
+                context = if (textBeforeCommand.isNotEmpty()) contextText else "",
+                additionalInstructions = additionalInstructions
+            )
+            return commandResult.fold(
+                onSuccess = { transformed ->
+                    Result.success(TranscriptionResult(transformed, detectedCommand.first.id, rawText))
                 },
-                onFailure = { error ->
-                    Result.failure(error)
+                onFailure = {
+                    Result.success(TranscriptionResult(rawText, originalTranscription = rawText))
                 }
             )
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+        return Result.success(TranscriptionResult(rawText, originalTranscription = rawText))
     }
 
     /**

@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.whispermate.aidictation.ui.screens.language.LanguageSettingsScreen
 import com.whispermate.aidictation.ui.screens.main.MainScreen
 import com.whispermate.aidictation.ui.screens.main.RecordingDetailScreen
 import com.whispermate.aidictation.ui.screens.onboarding.OnboardingScreen
@@ -20,7 +21,8 @@ import com.whispermate.aidictation.ui.screens.transcription.TranscriptionSetting
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
-    data object TranscriptionSettings : Screen("transcription_settings")
+    data object PostProcessingSettings : Screen("post_processing_settings")
+    data object LanguageSettings : Screen("language_settings")
     data object RecordingDetail : Screen("recording_detail/{recordingId}") {
         fun createRoute(recordingId: String) = "recording_detail/$recordingId"
     }
@@ -55,8 +57,11 @@ fun AIDictationNavHost(
 
         composable(Screen.Main.route) {
             MainScreen(
-                onNavigateToTranscriptionSettings = {
-                    navController.navigate(Screen.TranscriptionSettings.route)
+                onNavigateToPostProcessingSettings = {
+                    navController.navigate(Screen.PostProcessingSettings.route)
+                },
+                onNavigateToLanguageSettings = {
+                    navController.navigate(Screen.LanguageSettings.route)
                 },
                 onNavigateToRecordingDetail = { recordingId ->
                     Log.d("Navigation", "Navigating to recording detail: $recordingId")
@@ -65,8 +70,14 @@ fun AIDictationNavHost(
             )
         }
 
-        composable(Screen.TranscriptionSettings.route) {
+        composable(Screen.PostProcessingSettings.route) {
             TranscriptionSettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.LanguageSettings.route) {
+            LanguageSettingsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

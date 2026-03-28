@@ -11,7 +11,8 @@ import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
-import com.whispermate.aidictation.data.remote.TranscriptionClient
+import com.squareup.moshi.Moshi
+import com.whispermate.aidictation.data.preferences.AppPreferences
 import com.whispermate.aidictation.util.SileroVAD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,10 @@ class WhisperRecognitionService : RecognitionService() {
     private var sileroVAD: SileroVAD? = null
     private var currentCallback: Callback? = null
     private var isListening = false
+    private val appPreferences by lazy { AppPreferences(applicationContext, Moshi.Builder().build()) }
+    private val transcriptionRepository by lazy {
+        com.whispermate.aidictation.data.repository.TranscriptionRepository(appPreferences)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -235,32 +240,30 @@ class WhisperRecognitionService : RecognitionService() {
 
                 // Transcribe
                 Log.d(TAG, "Starting transcription, file size: ${audioFile.length()}")
-                val result = TranscriptionClient.transcribe(audioFile, null)
+                val text: String = transcriptionRepository.transcribe(audioFile).getOrElse { "" }
 
-                result.fold(
-                    onSuccess = { text ->
-                        Log.d(TAG, "Transcription result: $text")
-                        launch(Dispatchers.Main) {
-                            val results = Bundle().apply {
-                                putStringArrayList(
-                                    SpeechRecognizer.RESULTS_RECOGNITION,
-                                    arrayListOf(text)
-                                )
-                                putFloatArray(
-                                    SpeechRecognizer.CONFIDENCE_SCORES,
-                                    floatArrayOf(1.0f)
-                                )
-                            }
-                            callback.results(results)
+                Log.d(TAG, "Transcription result: $text")
+
+                if (text.isNotEmpty()) {
+                    launch(Dispatchers.Main) {
+                        val results = Bundle().apply {
+                            putStringArrayList(
+                                SpeechRecognizer.RESULTS_RECOGNITION,
+                                arrayListOf(text)
+                            )
+                            putFloatArray(
+                                SpeechRecognizer.CONFIDENCE_SCORES,
+                                floatArrayOf(1.0f)
+                            )
                         }
-                    },
-                    onFailure = { error ->
-                        Log.e(TAG, "Transcription failed", error)
-                        launch(Dispatchers.Main) {
-                            callback.error(SpeechRecognizer.ERROR_SERVER)
-                        }
+                        callback.results(results)
                     }
-                )
+                } else {
+                    Log.e(TAG, "Transcription returned empty text")
+                    launch(Dispatchers.Main) {
+                        callback.error(SpeechRecognizer.ERROR_SERVER)
+                    }
+                }
 
                 // Cleanup
                 audioFile.delete()
