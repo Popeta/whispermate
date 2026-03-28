@@ -43,20 +43,21 @@ public class AuthManager: ObservableObject {
     }
 
     private func startAutoRefreshIfNeeded() async {
-        guard !didStartAutoRefresh else { return }
+        guard !didStartAutoRefresh, let client = supabase.client else { return }
         didStartAutoRefresh = true
-        await supabase.client.auth.startAutoRefresh()
+        await client.auth.startAutoRefresh()
     }
 
     private func ensureValidSession() async -> Bool {
+        guard let client = supabase.client else { return false }
         do {
-            _ = try await supabase.client.auth.session
+            _ = try await client.auth.session
             await startAutoRefreshIfNeeded()
             return true
         } catch {
             DebugLog.info("No active session, attempting refresh: \(error.localizedDescription)", context: "AuthManager")
             do {
-                _ = try await supabase.client.auth.refreshSession()
+                _ = try await client.auth.refreshSession()
                 await startAutoRefreshIfNeeded()
                 return true
             } catch {
@@ -92,7 +93,8 @@ public class AuthManager: ObservableObject {
         DebugLog.info("Handling auth callback: \(url.absoluteString)", context: "AuthManager")
 
         do {
-            let session = try await supabase.client.auth.session(from: url)
+            guard let client = supabase.client else { return }
+            let session = try await client.auth.session(from: url)
             DebugLog.info("Session established for user: \(session.user.id)", context: "AuthManager")
             await refreshUser()
         } catch {
@@ -148,7 +150,7 @@ public class AuthManager: ObservableObject {
     public func logout() async {
         DebugLog.info("Logging out...", context: "AuthManager")
         do {
-            try await supabase.client.auth.signOut()
+            try await supabase.client?.auth.signOut()
             await MainActor.run {
                 self.currentUser = nil
                 self.isAuthenticated = false

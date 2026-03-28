@@ -68,6 +68,12 @@ jobs:
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm /tmp/certificate.p12
 
+      - name: Install Secrets.plist
+        env:
+          SECRETS_PLIST: ${{ secrets.SECRETS_PLIST }}
+        run: |
+          echo "$SECRETS_PLIST" | base64 --decode > Whishpermate/Whispermate/Secrets.plist
+
       - name: Resolve Swift package dependencies
         run: |
           xcodebuild -resolvePackageDependencies \

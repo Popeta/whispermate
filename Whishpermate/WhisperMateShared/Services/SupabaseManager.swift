@@ -33,14 +33,16 @@ final class UserDefaultsAuthLocalStorage: AuthLocalStorage, @unchecked Sendable 
 public class SupabaseManager {
     public static let shared = SupabaseManager()
 
-    public let client: SupabaseClient
+    public let client: SupabaseClient?
 
     private init() {
         guard let supabaseURL = SecretsLoader.getValue(for: "SUPABASE_URL"),
               let supabaseKey = SecretsLoader.getValue(for: "SUPABASE_ANON_KEY"),
               let url = URL(string: supabaseURL)
         else {
-            fatalError("Missing Supabase credentials in Secrets.plist")
+            DebugLog.error("Missing Supabase credentials in Secrets.plist - auth features disabled", context: "SupabaseManager")
+            client = nil
+            return
         }
 
         // Configure client with implicit flow for web-based auth
@@ -57,9 +59,21 @@ public class SupabaseManager {
         )
     }
 
+    // MARK: - Private Helpers
+
+    private func requireClient() throws -> SupabaseClient {
+        guard let client else {
+            throw NSError(domain: "SupabaseManager", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "Supabase not configured",
+            ])
+        }
+        return client
+    }
+
     // MARK: - User Management
 
     public func fetchUser() async throws -> User {
+        let client = try requireClient()
         // Get current session
         let session = try await client.auth.session
 
@@ -81,6 +95,7 @@ public class SupabaseManager {
     }
 
     public func updateUserWordCount(wordsToAdd: Int) async throws -> User {
+        let client = try requireClient()
         // First, fetch current user
         let currentUser = try await fetchUser()
         let newTotal = currentUser.monthlyWordCount + wordsToAdd
@@ -116,6 +131,7 @@ public class SupabaseManager {
 
     /// Reset monthly word count and set new reset date (for monthly limit reset)
     public func resetMonthlyWordCount() async throws -> User {
+        let client = try requireClient()
         let currentUser = try await fetchUser()
 
         // Calculate next month start
@@ -170,6 +186,7 @@ public class SupabaseManager {
             language: language
         )
 
+        let client = try requireClient()
         let response: TranscribeResponse = try await client.functions
             .invoke("transcribe", options: FunctionInvokeOptions(
                 body: requestBody
