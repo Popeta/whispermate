@@ -633,46 +633,48 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 2)
 
-                    // Parakeet model status — always show so users can download to unlock Auto/Local
-                    Divider()
-                        .padding(.vertical, 6)
+                    // Parakeet model status (only when local or auto mode)
+                    if transcriptionProviderManager.transcriptionMode != .cloud {
+                        Divider()
+                            .padding(.vertical, 6)
 
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Local Model")
-                                .dsFont(.body)
-                                .foregroundStyle(Color.dsForeground)
-                            Text(parakeetStatusText)
-                                .dsFont(.label)
-                                .foregroundStyle(parakeetStatusColor)
-                        }
-                        Spacer()
-
-                        switch parakeetService.state {
-                        case .notInitialized:
-                            Button("Download Model") {
-                                Task {
-                                    try? await parakeetService.initialize()
-                                }
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local Model")
+                                    .dsFont(.body)
+                                    .foregroundStyle(Color.dsForeground)
+                                Text(parakeetStatusText)
+                                    .dsFont(.label)
+                                    .foregroundStyle(parakeetStatusColor)
                             }
-                            .controlSize(.small)
-                        case .downloading, .initializing:
-                            ProgressView()
+                            Spacer()
+
+                            switch parakeetService.state {
+                            case .notInitialized:
+                                Button("Download Model") {
+                                    Task {
+                                        try? await parakeetService.initialize()
+                                    }
+                                }
                                 .controlSize(.small)
-                        case .ready, .transcribing:
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        case .error:
-                            Button("Retry") {
-                                parakeetService.cleanup()
-                                Task {
-                                    try? await parakeetService.initialize()
+                            case .downloading, .initializing:
+                                ProgressView()
+                                    .controlSize(.small)
+                            case .ready, .transcribing:
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            case .error:
+                                Button("Retry") {
+                                    parakeetService.cleanup()
+                                    Task {
+                                        try? await parakeetService.initialize()
+                                    }
                                 }
+                                .controlSize(.small)
                             }
-                            .controlSize(.small)
                         }
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: transcriptionProviderManager.transcriptionMode)
