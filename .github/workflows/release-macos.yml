@@ -88,8 +88,8 @@ jobs:
             -configuration Release \
             -archivePath /tmp/AIDictation.xcarchive \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=G7DJ6P37KU \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
             archive
 
       - name: Export with Developer ID signing
@@ -101,10 +101,6 @@ jobs:
           <dict>
               <key>method</key>
               <string>developer-id</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>signingCertificate</key>
-              <string>Developer ID Application</string>
               <key>teamID</key>
               <string>G7DJ6P37KU</string>
           </dict>
