@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-16
 
     steps:
       - name: Checkout
@@ -87,9 +87,9 @@ jobs:
             -scheme Whispermate \
             -configuration Release \
             -archivePath /tmp/AIDictation.xcarchive \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM=G7DJ6P37KU \
-            OTHER_CODE_SIGN_FLAGS="--timestamp" \
             archive
 
       - name: Export with Developer ID signing
