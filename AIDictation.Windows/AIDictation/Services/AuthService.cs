@@ -8,6 +8,7 @@ using AIDictation.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Supabase;
 using Supabase.Gotrue;
+using UserProfile = UserProfile;
 using Supabase.Gotrue.Interfaces;
 using static Supabase.Gotrue.Constants;
 
@@ -46,7 +47,7 @@ public partial class AuthService : ObservableObject
     private bool _isLoading;
 
     [ObservableProperty]
-    private AIDictation.Models.User? _currentUser;
+    private UserProfile? _currentUser;
 
     [ObservableProperty]
     private string? _errorMessage;
@@ -432,7 +433,7 @@ public partial class AuthService : ObservableObject
         try
         {
             var response = await _supabaseClient
-                .From<AIDictation.Models.User>()
+                .From<UserProfile>()
                 .Where(u => u.UserId == Guid.Parse(userId))
                 .Single();
 
@@ -442,7 +443,7 @@ public partial class AuthService : ObservableObject
         {
             Debug.WriteLine($"[AuthService] Fetch user profile error: {ex.Message}");
             // Create a minimal user object from auth data
-            CurrentUser = new AIDictation.Models.User
+            CurrentUser = new UserProfile
             {
                 UserId = Guid.Parse(userId),
                 Email = _supabaseClient.Auth.CurrentUser?.Email ?? ""

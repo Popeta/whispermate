@@ -1,9 +1,12 @@
 using System;
 using Newtonsoft.Json;
+using Supabase.Postgrest.Attributes;
+using Supabase.Postgrest.Models;
 
 namespace AIDictation.Models;
 
-public class User
+[Table("users")]
+public class User : BaseModel
 {
     [JsonProperty("id")]
     public Guid Id { get; set; }
