@@ -137,6 +137,7 @@ class AppState: ObservableObject {
 
         if audioRecorder.isRecording {
             DebugLog.info("✅ Recording started successfully", context: "AppState")
+            SoundFeedbackManager.shared.playRecordingStartSound()
             if overlayManager.isOverlayMode {
                 let isCommand = (recordingMode == .command)
                 overlayManager.transition(to: .recording(isCommandMode: isCommand))
@@ -144,6 +145,7 @@ class AppState: ObservableObject {
             }
         } else {
             DebugLog.info("❌ Recording failed to start", context: "AppState")
+            SoundFeedbackManager.shared.playErrorSound()
             recordingState = .idle
             errorMessage = "Failed to start recording"
         }
@@ -163,6 +165,7 @@ class AppState: ObservableObject {
     /// Stop recording and begin transcription
     func stopRecording() {
         DebugLog.info("🛑 AppState.stopRecording()", context: "AppState")
+        SoundFeedbackManager.shared.playRecordingStopSound()
 
         guard recordingState == .recording else {
             DebugLog.info("⚠️ Not recording, current state: \(recordingState)", context: "AppState")
@@ -423,6 +426,7 @@ class AppState: ObservableObject {
 
             } catch {
                 DebugLog.info("❌ Transcription error: \(error)", context: "AppState")
+                SoundFeedbackManager.shared.playErrorSound()
 
                 // Save failed recording
                 let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
@@ -674,6 +678,7 @@ class AppState: ObservableObject {
                 self.recordingState = .pasting
             }
             ClipboardManager.copyAndPaste(transcription)
+            SoundFeedbackManager.shared.playSuccessSound()
             await MainActor.run {
                 self.recordingState = .idle
                 self.overlayManager.transition(to: self.overlayManager.hideIdleState ? .hidden : .idle)
