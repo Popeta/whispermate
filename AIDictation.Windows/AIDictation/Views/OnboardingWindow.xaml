@@ -7,12 +7,12 @@
         xmlns:converters="clr-namespace:AIDictation.Converters"
         mc:Ignorable="d"
         Title="WhisperMate Setup"
-        Width="600" Height="500"
-        MinWidth="600" MinHeight="500"
-        MaxWidth="600" MaxHeight="500"
+        Width="900" Height="580"
+        MinWidth="900" MinHeight="580"
+        MaxWidth="900" MaxHeight="580"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
+        Background="White">
 
     <Window.DataContext>
         <vm:OnboardingViewModel />
@@ -23,32 +23,61 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
         <converters:StepVisibilityConverter x:Key="StepVisibilityConverter"/>
-        <!-- Page indicator style -->
-        <Style x:Key="PageIndicator" TargetType="Ellipse">
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="Height" Value="8"/>
-            <Setter Property="Margin" Value="4,0"/>
-            <Setter Property="Fill" Value="#CCCCCC"/>
-        </Style>
-        <Style x:Key="PageIndicatorActive" TargetType="Ellipse" BasedOn="{StaticResource PageIndicator}">
-            <Setter Property="Fill" Value="#0078D4"/>
-        </Style>
+
+        <!-- Brand colors -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#F16E00"/>
+        <SolidColorBrush x:Key="AccentLightBrush" Color="#FFF0E0"/>
+        <SolidColorBrush x:Key="SubtextBrush" Color="#888888"/>
+        <SolidColorBrush x:Key="DotInactiveBrush" Color="#D9D9D9"/>
 
         <!-- Language button style -->
         <Style x:Key="LanguageButton" TargetType="Button">
-            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Padding" Value="14,10"/>
             <Setter Property="Margin" Value="4"/>
-            <Setter Property="Background" Value="#F0F0F0"/>
-            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="Background" Value="#F5F5F5"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinWidth" Value="130"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EEEEEE"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentLightBrush}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Primary button style -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="24,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -57,232 +86,320 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#E0E0E0"/>
+                    <Setter Property="Background">
+                        <Setter.Value>
+                            <SolidColorBrush Color="#D95E00"/>
+                        </Setter.Value>
+                    </Setter>
                 </Trigger>
-                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter Property="Background" Value="#CCE4F7"/>
-                    <Setter Property="BorderBrush" Value="#0078D4"/>
-                    <Setter Property="BorderThickness" Value="2"/>
-                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Ghost button style -->
+        <Style x:Key="GhostButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#666666"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#333333"/>
+                </Trigger>
             </Style.Triggers>
         </Style>
 
         <!-- Hotkey recorder style -->
         <Style x:Key="HotkeyRecorder" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="Background" Value="#FAFAFA"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Padding" Value="16,12"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
     </Window.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <!-- ============================================ -->
+        <!-- SPLIT LAYOUT: Steps 0-2 (Mic, Language, Hotkey) -->
+        <!-- ============================================ -->
+        <Border CornerRadius="12" Background="White" ClipToBounds="True"
+                Visibility="{Binding IsLastStep, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="360"/>
+                </Grid.ColumnDefinitions>
 
-        <!-- Content Area -->
-        <Grid Grid.Row="0" Margin="40,30,40,20">
-            <!-- Step 0: Microphone Permission -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}">
-                <TextBlock Text="🎙️" FontSize="64" HorizontalAlignment="Center" Margin="0,0,0,20"/>
-                <TextBlock Text="Microphone Access" FontSize="24" FontWeight="SemiBold" 
-                           HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" FontSize="14" 
-                           Foreground="#6B6B6B" MaxWidth="400" Margin="0,0,0,30">
-                    WhisperMate needs access to your microphone to record and transcribe your voice.
-                </TextBlock>
-                <Button Content="Open Windows Settings" Padding="20,12" FontSize="14"
-                        HorizontalAlignment="Center" Command="{Binding OpenMicrophoneSettingsCommand}"/>
-            </StackPanel>
+                <!-- Left: Content Area -->
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-            <!-- Step 1: Language Selection -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=1}">
-                <TextBlock Text="🌐" FontSize="64" HorizontalAlignment="Center" Margin="0,0,0,20"/>
-                <TextBlock Text="Select Language" FontSize="24" FontWeight="SemiBold" 
-                           HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" FontSize="14" 
-                           Foreground="#6B6B6B" MaxWidth="400" Margin="0,0,0,20">
-                    Choose your preferred language for transcription. You can change this later in settings.
-                </TextBlock>
-                <ItemsControl ItemsSource="{Binding Languages}" HorizontalAlignment="Center" MaxWidth="500">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Style="{StaticResource LanguageButton}"
-                                    Command="{Binding DataContext.SelectLanguageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    CommandParameter="{Binding}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Flag}" FontSize="16" Margin="0,0,6,0"/>
-                                    <TextBlock Text="{Binding DisplayName}" FontSize="13"/>
-                                </StackPanel>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
+                    <!-- Page Indicators -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,28,0,0">
+                        <Ellipse Width="8" Height="8" Margin="4,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="0">
+                                            <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <Ellipse Width="8" Height="8" Margin="4,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="1">
+                                            <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <Ellipse Width="8" Height="8" Margin="4,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="2">
+                                            <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <Ellipse Width="8" Height="8" Margin="4,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="0">
+                                            <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="1">
+                                            <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CurrentStep}" Value="2">
+                                            <Setter Property="Fill" Value="{StaticResource DotInactiveBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                    </StackPanel>
 
-            <!-- Step 2: Hotkey Setup -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=2}">
-                <TextBlock Text="⌨️" FontSize="64" HorizontalAlignment="Center" Margin="0,0,0,20"/>
-                <TextBlock Text="Recording Hotkey" FontSize="24" FontWeight="SemiBold" 
-                           HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" FontSize="14" 
-                           Foreground="#6B6B6B" MaxWidth="400" Margin="0,0,0,24">
-                    Set a global hotkey to start/stop recording from anywhere.
-                </TextBlock>
-                
-                <Grid HorizontalAlignment="Center" Width="300">
-                    <Border Style="{StaticResource HotkeyRecorder}"
-                            MouseLeftButtonDown="HotkeyRecorder_MouseLeftButtonDown"
-                            PreviewKeyDown="HotkeyRecorder_PreviewKeyDown"
-                            Focusable="True">
-                        <Grid>
-                            <TextBlock x:Name="HotkeyText"
-                                       Text="{Binding HotkeyDisplayText}"
-                                       FontSize="16" FontWeight="Medium"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding IsRecordingHotkey, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
-                            <TextBlock Text="Press any key..."
-                                       FontSize="16" FontStyle="Italic"
-                                       Foreground="#6B6B6B"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding IsRecordingHotkey, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                            <Button Content="✕" FontSize="12" Padding="6,4"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Background="Transparent" BorderThickness="0"
-                                    Command="{Binding ClearHotkeyCommand}"
-                                    Visibility="{Binding IsRecordingHotkey, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
-                        </Grid>
-                    </Border>
+                    <!-- Content -->
+                    <Grid Grid.Row="1" Margin="40,20,40,10">
+                        <!-- Step 0: Microphone Permission -->
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left"
+                                    Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}">
+                            <TextBlock Text="Microphone Access" FontSize="26" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource SubtextBrush}"
+                                       MaxWidth="420" Margin="0,0,0,30">
+                                WhisperMate needs access to your microphone to record and transcribe your voice.
+                            </TextBlock>
+                            <Button Style="{StaticResource PrimaryButton}" Content="Open Windows Settings"
+                                    HorizontalAlignment="Left" Command="{Binding OpenMicrophoneSettingsCommand}"/>
+                        </StackPanel>
+
+                        <!-- Step 1: Language Selection -->
+                        <StackPanel VerticalAlignment="Top" HorizontalAlignment="Left"
+                                    Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=1}">
+                            <TextBlock Text="Select your languages" FontSize="26" FontWeight="Bold" Margin="0,0,0,8"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource SubtextBrush}"
+                                       MaxWidth="420" Margin="0,0,0,24">
+                                Choose all languages you speak or select auto-detect.
+                            </TextBlock>
+                            <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding Languages}" MaxWidth="460">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="3" HorizontalAlignment="Left"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource LanguageButton}"
+                                                    Command="{Binding DataContext.SelectLanguageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Flag}" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+
+                        <!-- Step 2: Hotkey Setup -->
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left"
+                                    Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=2}">
+                            <TextBlock Text="Recording Hotkey" FontSize="26" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource SubtextBrush}"
+                                       MaxWidth="420" Margin="0,0,0,28">
+                                Set a global hotkey to start and stop recording from anywhere.
+                            </TextBlock>
+
+                            <Grid HorizontalAlignment="Left" Width="300">
+                                <Border Style="{StaticResource HotkeyRecorder}"
+                                        MouseLeftButtonDown="HotkeyRecorder_MouseLeftButtonDown"
+                                        PreviewKeyDown="HotkeyRecorder_PreviewKeyDown"
+                                        Focusable="True">
+                                    <Grid>
+                                        <TextBlock x:Name="HotkeyText"
+                                                   Text="{Binding HotkeyDisplayText}"
+                                                   FontSize="16" FontWeight="Medium"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsRecordingHotkey, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                        <TextBlock Text="Press any key..."
+                                                   FontSize="16" FontStyle="Italic"
+                                                   Foreground="{StaticResource SubtextBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsRecordingHotkey, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        <Button Content="&#x2715;" FontSize="12" Padding="6,4"
+                                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                Background="Transparent" BorderThickness="0"
+                                                Command="{Binding ClearHotkeyCommand}"
+                                                Visibility="{Binding IsRecordingHotkey, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <TextBlock FontSize="12" Foreground="{StaticResource SubtextBrush}"
+                                       HorizontalAlignment="Left" Margin="0,14,0,0" MaxWidth="350">
+                                Tip: Function keys (F1-F12) work best as they're rarely used by other apps.
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Navigation Buttons -->
+                    <Grid Grid.Row="2" Margin="40,0,40,28">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Button Style="{StaticResource GhostButton}" Content="Back"
+                                    Visibility="{Binding CanGoBack, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    Command="{Binding PreviousStepCommand}"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="1" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding NextStepCommand}">
+                            <TextBlock Text="Next"/>
+                        </Button>
+                    </Grid>
                 </Grid>
 
-                <TextBlock Text="💡 Tip: Function keys (F1-F12) work best as they're rarely used by other apps."
-                           FontSize="11" Foreground="#6B6B6B" TextAlignment="Center"
-                           HorizontalAlignment="Center" Margin="0,16,0,0" MaxWidth="350"/>
-            </StackPanel>
+                <!-- Right: Gradient Illustration Panel with per-step content -->
+                <Border Grid.Column="1" CornerRadius="0,12,12,0" ClipToBounds="True">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#FFED46" Offset="0"/>
+                            <GradientStop Color="#FF7EC7" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid>
+                        <!-- Step 0: Microphone permission image -->
+                        <Image Source="/Resources/Onboarding/onboarding_mic_permission.png"
+                               Stretch="Uniform" MaxWidth="320" MaxHeight="380" Margin="20"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="20" Opacity="0.15" ShadowDepth="10"/>
+                            </Image.Effect>
+                        </Image>
 
-            <!-- Step 3: Complete -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=3}">
-                <TextBlock Text="✅" FontSize="64" HorizontalAlignment="Center" Margin="0,0,0,20"/>
-                <TextBlock Text="You're All Set!" FontSize="24" FontWeight="SemiBold" 
-                           HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" FontSize="14" 
-                           Foreground="#6B6B6B" MaxWidth="400" Margin="0,0,0,24">
-                    WhisperMate is ready to use. Press your hotkey from anywhere to start recording.
-                </TextBlock>
+                        <!-- Step 1: Languages illustration -->
+                        <Image Source="/Resources/Onboarding/onboarding_languages.png"
+                               Stretch="Uniform" MaxWidth="320" MaxHeight="380" Margin="20"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=1}">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="20" Opacity="0.15" ShadowDepth="10"/>
+                            </Image.Effect>
+                        </Image>
 
-                <Border Background="#F5F5F5" CornerRadius="8" Padding="24,20" MaxWidth="350">
-                    <StackPanel>
-                        <TextBlock Text="Quick tips:" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <StackPanel Margin="8,0,0,0">
-                            <TextBlock Text="• Hold hotkey to record" FontSize="13" Margin="0,0,0,6"/>
-                            <TextBlock Text="• Double-tap for continuous mode" FontSize="13" Margin="0,0,0,6"/>
-                            <TextBlock Text="• Access settings from system tray" FontSize="13"/>
-                        </StackPanel>
-                    </StackPanel>
+                        <!-- Step 2: Keyboard illustration -->
+                        <Image Source="/Resources/Onboarding/onboarding_keyboard.png"
+                               Stretch="Uniform" MaxWidth="340" MaxHeight="420" Margin="0"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Visibility="{Binding CurrentStep, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=2}">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="20" Opacity="0.15" ShadowDepth="10"/>
+                            </Image.Effect>
+                        </Image>
+                    </Grid>
                 </Border>
-            </StackPanel>
-        </Grid>
+            </Grid>
+        </Border>
 
-        <!-- Page Indicators -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
-            <Ellipse Width="8" Height="8" Margin="4,0">
-                <Ellipse.Style>
-                    <Style TargetType="Ellipse">
-                        <Setter Property="Fill" Value="#CCCCCC"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding CurrentStep}" Value="0">
-                                <Setter Property="Fill" Value="#0078D4"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Ellipse.Style>
-            </Ellipse>
-            <Ellipse Width="8" Height="8" Margin="4,0">
-                <Ellipse.Style>
-                    <Style TargetType="Ellipse">
-                        <Setter Property="Fill" Value="#CCCCCC"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding CurrentStep}" Value="1">
-                                <Setter Property="Fill" Value="#0078D4"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Ellipse.Style>
-            </Ellipse>
-            <Ellipse Width="8" Height="8" Margin="4,0">
-                <Ellipse.Style>
-                    <Style TargetType="Ellipse">
-                        <Setter Property="Fill" Value="#CCCCCC"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding CurrentStep}" Value="2">
-                                <Setter Property="Fill" Value="#0078D4"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Ellipse.Style>
-            </Ellipse>
-            <Ellipse Width="8" Height="8" Margin="4,0">
-                <Ellipse.Style>
-                    <Style TargetType="Ellipse">
-                        <Setter Property="Fill" Value="#CCCCCC"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding CurrentStep}" Value="3">
-                                <Setter Property="Fill" Value="#0078D4"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Ellipse.Style>
-            </Ellipse>
-        </StackPanel>
+        <!-- ============================================ -->
+        <!-- FULL-GRADIENT LAYOUT: Step 3 (Complete) -->
+        <!-- ============================================ -->
+        <Border CornerRadius="12" ClipToBounds="True"
+                Visibility="{Binding IsLastStep, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#FFED46" Offset="0"/>
+                    <GradientStop Color="#FF7EC7" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
 
-        <!-- Navigation Buttons -->
-        <Grid Grid.Row="2" Margin="40,0,40,30">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+            <!-- Centered white card -->
+            <Border Background="White" CornerRadius="16" Padding="48,40"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    MinWidth="340" MaxWidth="400">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="30" Opacity="0.15" ShadowDepth="8"/>
+                </Border.Effect>
+                <StackPanel HorizontalAlignment="Center">
+                    <!-- Green checkmark circle -->
+                    <Grid Width="64" Height="64" HorizontalAlignment="Center" Margin="0,0,0,20">
+                        <Ellipse Fill="#34C759"/>
+                        <TextBlock Text="&#x2713;" FontSize="32" FontWeight="Bold" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
 
-            <!-- Left side: Skip or Back -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
-                <Button Content="Skip" Padding="16,10" FontSize="14"
-                        Visibility="{Binding CanSkip, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Command="{Binding SkipCommand}"
-                        Background="Transparent" BorderThickness="0" Foreground="#6B6B6B"/>
-                <Button Content="← Back" Padding="16,10" FontSize="14"
-                        Visibility="{Binding CanGoBack, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Command="{Binding PreviousStepCommand}"
-                        Background="Transparent" BorderThickness="0"/>
-            </StackPanel>
+                    <TextBlock Text="You're all set!" FontSize="24" FontWeight="Bold"
+                               HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Text="WhisperMate is ready to use anywhere on your PC."
+                               FontSize="14" Foreground="{StaticResource SubtextBrush}"
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               Margin="0,0,0,24"/>
 
-            <!-- Right side: Next or Get Started -->
-            <Button Grid.Column="1" HorizontalAlignment="Right" Padding="20,10" FontSize="14"
-                    Visibility="{Binding IsLastStep, Converter={StaticResource InverseBoolToVisibilityConverter}}"
-                    Command="{Binding NextStepCommand}">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Next"/>
-                    <TextBlock Text=" →"/>
+                    <Button Style="{StaticResource PrimaryButton}" Content="Get Started"
+                            HorizontalAlignment="Center" Padding="32,12"
+                            Command="{Binding CompleteCommand}"/>
                 </StackPanel>
-            </Button>
-            <Button Grid.Column="1" Content="Get Started" HorizontalAlignment="Right" 
-                    Padding="20,10" FontSize="14"
-                    Visibility="{Binding IsLastStep, Converter={StaticResource BoolToVisibilityConverter}}"
-                    Command="{Binding CompleteCommand}"/>
-        </Grid>
+            </Border>
+        </Border>
     </Grid>
 </Window>

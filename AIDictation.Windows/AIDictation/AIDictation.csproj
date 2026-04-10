@@ -29,6 +29,7 @@
   <ItemGroup>
     <Resource Include="Resources\Icons\*.ico" />
     <Resource Include="Resources\Icons\*.png" />
+    <Resource Include="Resources\Onboarding\*.png" />
   </ItemGroup>
 
 </Project>
