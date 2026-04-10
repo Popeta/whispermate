@@ -46,7 +46,7 @@ public partial class AuthService : ObservableObject
     private bool _isLoading;
 
     [ObservableProperty]
-    private User? _currentUser;
+    private AIDictation.Models.User? _currentUser;
 
     [ObservableProperty]
     private string? _errorMessage;
