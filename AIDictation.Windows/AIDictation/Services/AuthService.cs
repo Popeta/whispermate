@@ -361,7 +361,8 @@ public partial class AuthService : ObservableObject
         var storedSession = CredentialHelper.LoadSession();
         if (storedSession == null) return false;
 
-        return await RefreshSessionAsync(storedSession.Value.RefreshToken);
+        await RefreshSessionAsync(storedSession.Value.RefreshToken);
+        return IsAuthenticated;
     }
 
     /// <summary>
@@ -431,7 +432,7 @@ public partial class AuthService : ObservableObject
         try
         {
             var response = await _supabaseClient
-                .From<User>()
+                .From<AIDictation.Models.User>()
                 .Where(u => u.UserId == Guid.Parse(userId))
                 .Single();
 
@@ -441,7 +442,7 @@ public partial class AuthService : ObservableObject
         {
             Debug.WriteLine($"[AuthService] Fetch user profile error: {ex.Message}");
             // Create a minimal user object from auth data
-            CurrentUser = new User
+            CurrentUser = new AIDictation.Models.User
             {
                 UserId = Guid.Parse(userId),
                 Email = _supabaseClient.Auth.CurrentUser?.Email ?? ""
