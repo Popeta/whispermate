@@ -329,26 +329,6 @@ class AppState: ObservableObject {
 
         Task {
             do {
-                // Check word limit for ALL users (authenticated and anonymous)
-                let (canTranscribe, reason) = SubscriptionManager.shared.checkCanTranscribe()
-                if !canTranscribe {
-                    DebugLog.info("⚠️ Word limit reached: \(reason ?? "unknown")", context: "AppState")
-                    await MainActor.run {
-                        self.recordingState = .idle
-                        self.isProcessing = false
-                    }
-                    try? FileManager.default.removeItem(at: audioURL)
-                    if overlayManager.isOverlayMode {
-                        overlayManager.transition(to: .idle)
-                    }
-
-                    // Open Settings to Account section
-                    await MainActor.run {
-                        NotificationCenter.default.post(name: .openAccountSettings, object: nil)
-                    }
-                    return
-                }
-
                 // VAD check first
                 if vadSettingsManager.vadEnabled {
                     let vadStart = CFAbsoluteTimeGetCurrent()
@@ -409,20 +389,13 @@ class AppState: ObservableObject {
                     return
                 }
 
-                // Count words in transcription
-                let wordCount = result.split(separator: " ").count
-
-                // Update word count (works for both authenticated and anonymous users)
-                await SubscriptionManager.shared.recordWords(wordCount)
-                DebugLog.info("✅ Updated word count: +\(wordCount) words", context: "AppState")
-
                 var recording = Recording(
                     audioFileURL: persistentURL,
                     transcription: result,
                     status: .success,
                     duration: duration
                 )
-                recording.wordCount = wordCount
+                recording.wordCount = result.split(separator: " ").count
 
                 // Capture mode and target before resetting
                 let wasCommandMode = self.recordingMode == .command

@@ -17,8 +17,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let appState = AppState.shared
     private let hotkeyManager = HotkeyManager.shared
     private let onboardingManager = OnboardingManager.shared
-    private let authManager = AuthManager.shared
-    private let subscriptionManager = SubscriptionManager.shared
 
     // Track last processed auth URL to prevent duplicates
     private var lastProcessedAuthURL: String?
@@ -129,20 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApplication.shared.activate(ignoringOtherApps: true)
             showMainSettingsWindow()
 
-            DebugLog.info("Processing auth callback...", context: "AppDelegate")
-            Task {
-                await authManager.handleAuthCallback(url: url)
-            }
-        }
-        // Handle payment success callback
-        else if url.scheme == "aidictation", url.host == "payment", url.path == "/success" {
-            Task {
-                await subscriptionManager.handlePaymentSuccess()
-            }
-        }
-        // Handle payment cancel callback
-        else if url.scheme == "aidictation", url.host == "payment", url.path == "/cancel" {
-            subscriptionManager.handlePaymentCancel()
+            DebugLog.info("Auth callback ignored (auth removed in fork)", context: "AppDelegate")
         }
     }
 
@@ -418,30 +403,11 @@ enum WindowBridge {
 struct WhishpermateApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
-    @StateObject private var authManager = AuthManager.shared
-    @StateObject private var subscriptionManager = SubscriptionManager.shared
 
     // MARK: - URL Handling
 
     private func handleURL(_ url: URL) {
-        DebugLog.info("Received URL callback: \(url.absoluteString)", context: "WhispermateApp")
-
-        // Handle authentication callback (aidictation://auth-callback)
-        if url.scheme == "aidictation", url.host == "auth-callback" || url.host == "auth" {
-            Task {
-                await authManager.handleAuthCallback(url: url)
-            }
-        }
-        // Handle payment success callback
-        else if url.scheme == "aidictation", url.host == "payment", url.path == "/success" {
-            Task {
-                await subscriptionManager.handlePaymentSuccess()
-            }
-        }
-        // Handle payment cancel callback
-        else if url.scheme == "aidictation", url.host == "payment", url.path == "/cancel" {
-            subscriptionManager.handlePaymentCancel()
-        }
+        DebugLog.info("Received URL callback: \(url.absoluteString) (auth/payment URLs ignored — auth removed in fork)", context: "WhispermateApp")
     }
 
     var body: some Scene {

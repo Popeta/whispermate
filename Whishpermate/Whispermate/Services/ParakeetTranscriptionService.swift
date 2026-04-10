@@ -65,9 +65,9 @@ class ParakeetTranscriptionService: ObservableObject {
 
             DebugLog.info("Initializing ASR manager...", context: "ParakeetTranscriptionService")
 
-            // Initialize ASR manager
+            // Initialize ASR manager (FluidAudio API: loadModels(_:))
             let manager = AsrManager(config: .default)
-            try await manager.initialize(models: downloadedModels)
+            try await manager.loadModels(downloadedModels)
 
             await MainActor.run {
                 self.asrManager = manager
@@ -111,15 +111,11 @@ class ParakeetTranscriptionService: ObservableObject {
         }
 
         do {
-            DebugLog.info("Converting audio to 16kHz mono...", context: "ParakeetTranscriptionService")
+            DebugLog.info("Transcribing audio file via FluidAudio (URL-based, auto-resample)...", context: "ParakeetTranscriptionService")
 
-            // Convert audio to 16kHz mono PCM (required by Parakeet)
-            let samples = try audioConverter.resampleAudioFile(path: audioURL.path)
-
-            DebugLog.info("Transcribing \(samples.count) samples...", context: "ParakeetTranscriptionService")
-
-            // Perform transcription
-            let result = try await manager.transcribe(samples)
+            // FluidAudio's transcribe(URL:source:) accepts any AVFoundation-compatible audio
+            // and handles resampling to 16kHz mono internally
+            let result = try await manager.transcribe(audioURL, source: .system)
 
             DebugLog.info("Transcription complete: \(result.text.prefix(100))...", context: "ParakeetTranscriptionService")
 

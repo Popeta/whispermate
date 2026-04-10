@@ -3,14 +3,6 @@ import AVFoundation
 import SwiftUI
 import WhisperMateShared
 
-// MARK: - Billing Period
-
-enum BillingPeriod {
-    case monthly
-    case annual
-    case lifetime
-}
-
 // MARK: - Settings Card Component
 
 struct SettingsCard<Content: View>: View {
@@ -32,9 +24,7 @@ struct SettingsCard<Content: View>: View {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
-    case account = "Account"
     case permissions = "Permissions"
-    // case transcription = "Transcription" // Hidden for now
     case audio = "Audio"
     case language = "Language"
     case dictionary = "Dictionary"
@@ -44,18 +34,16 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Sections visible in the sidebar list (Account is accessed via bottom status view)
+    /// Sections visible in the sidebar list
     static var sidebarCases: [SettingsSection] {
-        allCases.filter { $0 != .account }
+        Array(allCases)
     }
 
     var icon: String {
         switch self {
         case .general: return "gear"
-        case .account: return "person.circle"
         case .history: return "clock.arrow.circlepath"
         case .permissions: return "lock.shield"
-        // case .transcription: return "text.bubble"
         case .audio: return "waveform"
         case .language: return "globe"
         case .dictionary: return "book.closed"
@@ -67,10 +55,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .general: return "Hotkey, overlay, and startup settings"
-        case .account: return "Subscription and account management"
         case .history: return "View and manage transcription history"
         case .permissions: return "Microphone, accessibility, and screen recording"
-        // case .transcription: return "Transcription provider and model settings"
         case .audio: return "Input device and audio settings"
         case .language: return "Transcription language preferences"
         case .dictionary: return "Custom word replacements and corrections"
@@ -90,7 +76,6 @@ struct SettingsView: View {
     @ObservedObject var shortcutManager: ShortcutManager
     @ObservedObject var overlayManager = OverlayWindowManager.shared
     @ObservedObject var launchAtLoginManager = LaunchAtLoginManager.shared
-    @ObservedObject var authManager = AuthManager.shared
     @ObservedObject var screenCaptureManager = ScreenCaptureManager.shared
     @ObservedObject var parakeetService = ParakeetTranscriptionService.shared
     @ObservedObject var updateManager = UpdateManager.shared
@@ -103,9 +88,6 @@ struct SettingsView: View {
     @State private var showingLLMKeySaved = false
     @State private var audioDevices: [AudioDeviceManager.AudioDevice] = []
     @State private var selectedAudioDevice: AudioDeviceManager.AudioDevice?
-    @State private var selectedBillingPeriod: BillingPeriod = .monthly
-    @State private var isCheckingPayment = false
-    @State private var paymentCheckTask: Task<Void, Never>?
     @State private var pendingTranscriptionMode: TranscriptionMode?
     @Environment(\.dismiss) var dismiss
 
@@ -133,15 +115,6 @@ struct SettingsView: View {
                     }
                 }
                 .listStyle(.sidebar)
-
-                Divider()
-
-                // Account status at bottom of sidebar
-                SidebarAccountStatusView(onTap: {
-                    selectedSection = .account
-                })
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
         } detail: {
@@ -150,15 +123,11 @@ struct SettingsView: View {
                     switch selectedSection {
                     case .general:
                         generalSection
-                    case .account:
-                        accountSection
                     case .history:
                         // History opens in separate window, show placeholder
                         EmptyView()
                     case .permissions:
                         permissionsSection
-                    // case .transcription:
-                    //     transcriptionSection
                     case .audio:
                         audioSection
                     case .language:
@@ -184,335 +153,7 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AudioDeviceListChanged"))) { _ in
             loadAudioDevices()
         }
-        .onDisappear {
-            stopPaymentConfirmationCheck()
-        }
     }
-
-    // MARK: - Account Section
-
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Account Status Card
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    if authManager.isAuthenticated, let user = authManager.currentUser {
-                        // Email
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Account")
-                                    .dsFont(.body)
-                                    .foregroundStyle(Color.dsForeground)
-                                Text(user.email)
-                                    .dsFont(.label)
-                                    .foregroundStyle(Color.dsMutedForeground)
-                            }
-                            Spacer()
-                            Button("Sign Out") {
-                                Task {
-                                    await AuthManager.shared.logout()
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-
-                        Divider()
-
-                        // Subscription Status
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Subscription")
-                                    .dsFont(.body)
-                                    .foregroundStyle(Color.dsForeground)
-                                Text(user.subscriptionTier.displayName)
-                                    .dsFont(.label)
-                                    .foregroundStyle(user.subscriptionTier.isPaid ? Color.dsSecondary : Color.dsMutedForeground)
-                            }
-                            Spacer()
-                        }
-                    } else {
-                        // Not signed in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Account")
-                                    .dsFont(.body)
-                                    .foregroundStyle(Color.dsForeground)
-                                Text("Sign up to upgrade to unlimited")
-                                    .dsFont(.label)
-                                    .foregroundStyle(Color.dsMutedForeground)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                            Button("Upgrade") {
-                                authManager.openSignUp()
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
-            // Word Usage Card (for all free users - authenticated or not)
-            if !isPro {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Word Usage")
-                                    .dsFont(.body)
-                                    .foregroundStyle(Color.dsForeground)
-
-                                let (used, limit, _, _) = subscriptionManager.getUsageStatus()
-                                let remaining = max(0, limit - used)
-
-                                if remaining == 0 {
-                                    Text("You've used all \(limit) free words this month")
-                                        .dsFont(.label)
-                                        .foregroundStyle(Color.orange)
-                                } else {
-                                    Text("\(used) of \(limit) words used this month")
-                                        .dsFont(.label)
-                                        .foregroundStyle(Color.dsMutedForeground)
-                                }
-                            }
-                            Spacer()
-                        }
-
-                        // Progress bar
-                        let (used, limit, percentage, _) = subscriptionManager.getUsageStatus()
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.secondary.opacity(0.2))
-                                    .frame(height: 8)
-
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(percentage >= 1.0 ? Color.orange : Color.accentColor)
-                                    .frame(width: geo.size.width * min(percentage, 1.0), height: 8)
-                            }
-                        }
-                        .frame(height: 8)
-
-                        // Reset date
-                        if let resetDate = getResetDate() {
-                            Text("Resets \(resetDate)")
-                                .dsFont(.label)
-                                .foregroundStyle(Color.dsMutedForeground)
-                        }
-                    }
-                }
-            }
-
-            // Upgrade Card (only for authenticated Free tier users)
-            if authManager.isAuthenticated && !isPro {
-                SettingsCard {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Upgrade to Pro")
-                                .dsFont(.body)
-                                .foregroundStyle(Color.dsForeground)
-                            if isCheckingPayment {
-                                Text("Checking for payment confirmation...")
-                                    .dsFont(.label)
-                                    .foregroundStyle(Color.dsMutedForeground)
-                            } else {
-                                Text("Unlimited transcriptions, priority support")
-                                    .dsFont(.label)
-                                    .foregroundStyle(Color.dsMutedForeground)
-                            }
-                        }
-                        Spacer()
-                        if isCheckingPayment {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Button("Upgrade") {
-                                openPaymentLink()
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
-        }
-        .onAppear {
-            resumePaymentCheckIfNeeded()
-        }
-    }
-
-    private var isPro: Bool {
-        authManager.isAuthenticated && (authManager.currentUser?.subscriptionTier.isPaid ?? false)
-    }
-
-    private func getResetDate() -> String? {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-
-        if authManager.isAuthenticated, let user = authManager.currentUser {
-            if let resetAt = user.wordCountResetAt {
-                return formatter.string(from: resetAt)
-            }
-        } else {
-            if let resetAt = subscriptionManager.localWordCountResetAt {
-                return formatter.string(from: resetAt)
-            }
-        }
-        return nil
-    }
-
-    private func openPaymentLink() {
-        if isCheckingPayment {
-            return
-        }
-
-        if let user = authManager.currentUser, user.subscriptionTier.isPaid {
-            return
-        }
-
-        if let user = authManager.currentUser, user.stripeSubscriptionId != nil {
-            DebugLog.info("Checkout blocked: existing subscription detected", context: "SettingsView")
-            startPaymentConfirmationCheck(resuming: true)
-            return
-        }
-
-        if hasPendingPaymentAttempt() {
-            DebugLog.info("Checkout blocked: payment confirmation already in progress", context: "SettingsView")
-            startPaymentConfirmationCheck(resuming: true)
-            return
-        }
-
-        let paymentLinkKey: String
-        switch selectedBillingPeriod {
-        case .monthly:
-            paymentLinkKey = "STRIPE_PAYMENT_LINK_MONTHLY"
-        case .annual:
-            paymentLinkKey = "STRIPE_PAYMENT_LINK_ANNUAL"
-        case .lifetime:
-            paymentLinkKey = "STRIPE_PAYMENT_LINK_LIFETIME"
-        @unknown default:
-            paymentLinkKey = "STRIPE_PAYMENT_LINK_MONTHLY"
-        }
-
-        guard let paymentLinkString = SecretsLoader.getValue(for: paymentLinkKey),
-              var paymentURL = URL(string: paymentLinkString)
-        else {
-            DebugLog.error("Invalid payment link", context: "SettingsView")
-            return
-        }
-
-        // Add user email as query parameter if authenticated
-        if let email = authManager.currentUser?.email,
-           let encodedEmail = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        {
-            var components = URLComponents(url: paymentURL, resolvingAgainstBaseURL: false)
-            var queryItems = components?.queryItems ?? []
-            queryItems.append(URLQueryItem(name: "prefilled_email", value: encodedEmail))
-            components?.queryItems = queryItems
-            if let urlWithEmail = components?.url {
-                paymentURL = urlWithEmail
-            }
-        }
-
-        #if canImport(AppKit)
-            NSWorkspace.shared.open(paymentURL)
-        #endif
-
-        // Start checking for payment confirmation
-        startPaymentConfirmationCheck(resuming: false)
-    }
-
-    private enum PaymentTracking {
-        static let pendingKey = "paymentAttemptAt"
-        static let pendingWindow: TimeInterval = 10 * 60
-    }
-
-    private func hasPendingPaymentAttempt() -> Bool {
-        guard let lastAttempt = AppDefaults.shared.object(forKey: PaymentTracking.pendingKey) as? Date else {
-            return false
-        }
-        return Date().timeIntervalSince(lastAttempt) < PaymentTracking.pendingWindow
-    }
-
-    private func markPaymentAttempt() {
-        AppDefaults.shared.set(Date(), forKey: PaymentTracking.pendingKey)
-    }
-
-    private func clearPaymentAttempt() {
-        AppDefaults.shared.removeObject(forKey: PaymentTracking.pendingKey)
-    }
-
-    private func resumePaymentCheckIfNeeded() {
-        guard !isCheckingPayment, paymentCheckTask == nil else { return }
-        guard authManager.isAuthenticated, !isPro else {
-            clearPaymentAttempt()
-            return
-        }
-        if hasPendingPaymentAttempt() {
-            startPaymentConfirmationCheck(resuming: true)
-        }
-    }
-
-    private func startPaymentConfirmationCheck(resuming: Bool) {
-        guard !isCheckingPayment, paymentCheckTask == nil else { return }
-
-        if !resuming {
-            markPaymentAttempt()
-        }
-
-        isCheckingPayment = true
-        DebugLog.info("Starting payment confirmation check", context: "SettingsView")
-
-        paymentCheckTask = Task {
-            var wasCancelled = false
-            // Poll for up to 10 minutes (120 checks every 5 seconds)
-            for _ in 0 ..< 120 {
-                if Task.isCancelled {
-                    wasCancelled = true
-                    break
-                }
-
-                // Wait 5 seconds between checks
-                do {
-                    try await Task.sleep(nanoseconds: 5_000_000_000)
-                } catch {
-                    wasCancelled = true
-                    break
-                }
-
-                // Refresh user data
-                await authManager.refreshUser()
-
-                // Check if subscription status changed to paid
-                if authManager.currentUser?.subscriptionTier.isPaid == true {
-                    DebugLog.info("✅ Payment confirmed! User is now \(authManager.currentUser?.subscriptionTier.displayName ?? "paid")", context: "SettingsView")
-                    await MainActor.run {
-                        isCheckingPayment = false
-                    }
-                    clearPaymentAttempt()
-                    break
-                }
-            }
-
-            // Stop checking after 10 minutes
-            await MainActor.run {
-                isCheckingPayment = false
-                paymentCheckTask = nil
-            }
-            if !wasCancelled {
-                clearPaymentAttempt()
-            }
-        }
-    }
-
-    private func stopPaymentConfirmationCheck() {
-        paymentCheckTask?.cancel()
-        paymentCheckTask = nil
-        isCheckingPayment = false
-    }
-
 
     // MARK: - General Section
 
@@ -1486,62 +1127,6 @@ struct RuleRow: View {
                 isHovering = hovering
             }
         }
-    }
-}
-
-// MARK: - Sidebar Account Status View
-
-struct SidebarAccountStatusView: View {
-    @ObservedObject private var authManager = AuthManager.shared
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-
-    var onTap: () -> Void
-
-    var body: some View {
-        let (used, limit, percentage, isPro) = subscriptionManager.getUsageStatus()
-
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
-                // Plan badge
-                HStack(spacing: 4) {
-                    Image(systemName: isPro ? "star.fill" : "person.fill")
-                        .font(.caption2)
-                    Text(authManager.currentUser?.subscriptionTier.displayName ?? (isPro ? "Pro" : "Free"))
-                        .font(.caption)
-                        .fontWeight(.medium)
-                }
-                .foregroundStyle(isPro ? .orange : .secondary)
-
-                if isPro {
-                    Text("Unlimited transcriptions")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else {
-                    // Usage bar
-                    VStack(alignment: .leading, spacing: 4) {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.secondary.opacity(0.2))
-                                    .frame(height: 4)
-
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(percentage >= 0.9 ? Color.orange : Color.accentColor)
-                                    .frame(width: geo.size.width * min(percentage, 1.0), height: 4)
-                            }
-                        }
-                        .frame(height: 4)
-
-                        Text("\(limit - used) words left")
-                            .font(.caption2)
-                            .foregroundStyle(percentage >= 0.9 ? .orange : .secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 

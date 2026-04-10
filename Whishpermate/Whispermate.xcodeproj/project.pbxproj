@@ -8,10 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		BDFC47F5E1B86E447DC841F2 /* WhisperMateShared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = C1E7D2AD2EBA925200A07338 /* WhisperMateShared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		C12A3A102ED4CFAA002D97E6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = C12A3A0F2ED4CFAA002D97E6 /* Supabase */; };
-		C12A3A142ED4D0AA002D97E6 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = C12A3A132ED4D0AA002D97E6 /* Auth */; };
-		C12A3A162ED4D0AA002D97E6 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = C12A3A152ED4D0AA002D97E6 /* Functions */; };
-		C12A3A182ED4D0AA002D97E6 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = C12A3A172ED4D0AA002D97E6 /* PostgREST */; };
 		C1FA00032F0B000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = C1FA00022F0B000000000002 /* FluidAudio */; };
 		C2A100012F2B000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C2A100032F2B000000000003 /* Sparkle */; };
 /* End PBXBuildFile section */
@@ -169,10 +165,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C12A3A182ED4D0AA002D97E6 /* PostgREST in Frameworks */,
-				C12A3A162ED4D0AA002D97E6 /* Functions in Frameworks */,
-				C12A3A142ED4D0AA002D97E6 /* Auth in Frameworks */,
-				C12A3A102ED4CFAA002D97E6 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,7 +352,6 @@
 			mainGroup = C18566CA2EA0D31000B46F55;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				C1FA00012F0B000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				C2A100022F2B000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
@@ -966,14 +957,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/supabase/supabase-swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.5.1;
-			};
-		};
 		C1FA00012F0B000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
@@ -993,26 +976,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		C12A3A0F2ED4CFAA002D97E6 /* Supabase */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = Supabase;
-		};
-		C12A3A132ED4D0AA002D97E6 /* Auth */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = Auth;
-		};
-		C12A3A152ED4D0AA002D97E6 /* Functions */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = Functions;
-		};
-		C12A3A172ED4D0AA002D97E6 /* PostgREST */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C12A3A0D2ED4CF91002D97E6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = PostgREST;
-		};
 		C1FA00022F0B000000000002 /* FluidAudio */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C1FA00012F0B000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
