@@ -31,7 +31,7 @@ class ClipboardManager {
             DebugLog.info("Restored original clipboard content", context: "ClipboardManager")
         }
         clipboardRestoreWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
     }
 
     static func copyAndPaste(_ text: String) {
