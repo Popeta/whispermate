@@ -25,7 +25,7 @@ xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -conf
 xcodebuild -project Whishpermate/Whispermate.xcodeproj -scheme Whispermate -configuration Release build
 
 # Установка Debug сборки
-cp -R ~/Library/Developer/Xcode/DerivedData/Whispermate-*/Build/Products/Debug/Whispermate.app ~/Applications/
+cp -R ~/Library/Developer/Xcode/DerivedData/Whispermate-*/Build/Products/Debug/AIDictation.app ~/Applications/
 
 # Подпись и нотаризация (когда запрошен релиз)
 ./sign-and-notarize.sh
@@ -77,7 +77,7 @@ Hotkey press → AudioRecorder.startRecording()
         ├─ Cloud: OpenAIClient.transcribe() (Groq / OpenAI / Custom)
         └─ Local: ParakeetTranscriptionService.transcribe() (FluidAudio + Parakeet TDT v3)
     → TextFormattingManager (LLM tone/style — optional, cloud-only)
-    → PasteHelper.copyAndPaste()
+    → ClipboardManager.copyAndPaste()
     → HistoryManager.save()
 ```
 
@@ -240,6 +240,21 @@ API ключи загружаются в порядке: **Secrets.plist → Key
 Это позволяет избежать Keychain промптов в debug-сборках.
 
 Parakeet провайдеру **API ключ не нужен** — модель работает локально.
+
+## Известные баги и фиксы
+
+### ClipboardManager — paste race condition (исправлен 2026-04-28)
+
+**Симптом:** правильно распознанный текст показывается в истории, но вставляется старый (предыдущий) текст.
+
+**Причина:** `ClipboardManager.scheduleClipboardRestore` восстанавливал оригинальный буфер через 0.2s после Cmd+V — слишком мало для тяжёлых приложений (Chrome, терминал, Slack). Если вторая диктовка начиналась до истечения 0.2s, restore отменялся, и предыдущая диктовка оставалась в буфере как "original" для следующей операции.
+
+**Фикс:** `ClipboardManager.swift:34` — restore delay увеличен с `0.2s` до `1.5s`.
+
+**Timing после фикса:**
+- T+0.0s: новый текст в буфере
+- T+0.3s: Cmd+V отправлен в приложение
+- T+1.8s: буфер восстановлен (1.5s после Cmd+V)
 
 ## Fork-specific notes
 
