@@ -256,6 +256,20 @@ Parakeet провайдеру **API ключ не нужен** — модель 
 - T+0.3s: Cmd+V отправлен в приложение
 - T+1.8s: буфер восстановлен (1.5s после Cmd+V)
 
+### Fn hotkey "залипает" — stuck-state regression (исправлен 2026-05-12)
+
+**Симптом:** после нескольких минут работы push-to-talk Fn перестаёт реагировать на нажатие — `isHoldingKey=true` оседает в state и блокирует следующий start. Лечится только перезапуском приложения.
+
+**Регрессия:** введена коммитом `d5962a8` (2026-02-12, "Replace Android IME with overlay accessibility flow and hotkey updates") — Fn handling мигрировал с `FnKeyMonitor` (NSEvent global monitor, persistent на уровне Cocoa) на CGEventTap `flagsChanged`. CGEventTap **может быть отключён системой** через `kCGEventTapDisabledByTimeout` / `kCGEventTapDisabledByUserInput` (под нагрузкой, при фокусе на system UI — Spotlight, Mission Control), и release event для Fn теряется в окне между disable и re-enable. NSEvent global monitor в старом FnKeyMonitor не имел этой проблемы (Cocoa доставляет события надёжно). До рефакторинга бага не было.
+
+**Фикс** (`HotkeyManager.swift`):
+
+1. **Self-heal в `handleModifierFlagsStateChange`** — при свежем press с `isHoldingKey=true` (= release был потерян) принудительно закрываем orphan recording и fall-through в нормальный start path. Аналогично для `isHoldingCommandKey`. ~10 строк.
+
+2. **FnKeyMonitor как secondary release detector** (belt-and-suspenders) — в `registerHotkey()` стартуем `FnKeyMonitor` если dictation/command hotkey = Fn-only. Подписываемся только на `onFnReleased` (press остаётся в CGEventTap для consume-capability — блокировать macOS Globe overlay). Если CGEventTap пропустил release — NSEvent global monitor поймает и закроет orphan session через `reconcileMissedFnRelease()`. ~30 строк.
+
+**Backup при rebuild:** `~/Applications/AIDictation.app.bak-{timestamp}` (adhoc-signed бинарь, для отката без re-grant Accessibility).
+
 ## Fork-specific notes
 
 Этот форк (`Popeta/whispermate`) — независимая личная сборка, синхронизирована с `writingmate/aidictation` 2026-04-10.

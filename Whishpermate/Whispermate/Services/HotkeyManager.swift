@@ -285,6 +285,44 @@ class HotkeyManager: ObservableObject {
         }
 
         setupSystemDefinedDiagnosticsIfNeeded(dictationHotkey: dictationHotkey)
+
+        // Belt-and-suspenders: NSEvent global monitor catches Fn release events that
+        // CGEventTap drops when disabled by kCGEventTapDisabledByTimeout / UserInput.
+        // Press path stays in CGEventTap so we keep consume-capability.
+        startFnReleaseReconcilerIfNeeded()
+    }
+
+    private func startFnReleaseReconcilerIfNeeded() {
+        guard isFnOnlyHotkey(currentHotkey) || isFnOnlyHotkey(commandHotkey) else { return }
+
+        let monitor = FnKeyMonitor()
+        monitor.onFnReleased = { [weak self] in
+            self?.reconcileMissedFnRelease()
+        }
+        // Intentionally NOT wiring onFnPressed — keep press path exclusively in CGEventTap
+        // so we can still consume the event (block macOS built-in Globe dictation overlay).
+        monitor.startMonitoring()
+        fnKeyMonitor = monitor
+        DebugLog.info("Fn release reconciler started (NSEvent global monitor backup)", context: "HotkeyManager LOG")
+    }
+
+    private func isFnOnlyHotkey(_ hotkey: Hotkey?) -> Bool {
+        guard let hotkey, !hotkey.isMouseButton else { return false }
+        let isFnKeyCode = hotkey.keyCode == 63 || hotkey.keyCode == 179
+        return isFnKeyCode && hotkey.modifiers == .function
+    }
+
+    private func reconcileMissedFnRelease() {
+        if isHoldingKey {
+            DebugLog.error("Reconciler: missed Fn release while isHoldingKey=true. Closing orphan recording.", context: "HotkeyDiagnostics")
+            isHoldingKey = false
+            onHotkeyReleased?()
+        }
+        if isHoldingCommandKey {
+            DebugLog.error("Reconciler: missed Fn release while isHoldingCommandKey=true. Closing orphan command session.", context: "HotkeyDiagnostics")
+            isHoldingCommandKey = false
+            onCommandHotkeyReleased?()
+        }
     }
 
     private func setupEventTap() {
@@ -833,6 +871,15 @@ class HotkeyManager: ObservableObject {
     @discardableResult
     private func handleModifierFlagsStateChange(isModifierPressed: Bool, isDictation: Bool) -> Bool {
         if isDictation {
+            // Self-healing: a fresh press while isHoldingKey=true means previous release
+            // was lost (CGEventTap timeout, system context switch, focus to system UI).
+            // Force-close the orphan session and fall through to the normal start path.
+            if isModifierPressed && isHoldingKey {
+                DebugLog.error("Stuck-state recovery: re-press while isHoldingKey=true. Closing orphan recording before restart.", context: "HotkeyDiagnostics")
+                isHoldingKey = false
+                onHotkeyReleased?()
+                // fall through to normal start logic below
+            }
             if isModifierPressed && !isHoldingKey {
                 let now = Date()
 
@@ -874,6 +921,12 @@ class HotkeyManager: ObservableObject {
             return false
         }
 
+        // Self-healing for command hotkey — same rationale as dictation branch above.
+        if isModifierPressed && isHoldingCommandKey {
+            DebugLog.error("Stuck-state recovery: re-press while isHoldingCommandKey=true. Closing orphan command session before restart.", context: "HotkeyDiagnostics")
+            isHoldingCommandKey = false
+            onCommandHotkeyReleased?()
+        }
         if isModifierPressed && !isHoldingCommandKey {
             if isPushToTalk {
                 DebugLog.info("handleFlagsChangedEvent: Command modifier pressed (Push-to-Talk)", context: "HotkeyManager LOG")
