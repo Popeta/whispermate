@@ -14,7 +14,7 @@ class OpenAIClient {
     // Custom URLSession optimized for persistent connections and SSL session reuse
     private static let urlSession: URLSession = {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10.0 // Fail fast - 10 seconds max per request
+        config.timeoutIntervalForRequest = 30.0 // 30 seconds for audio upload on slow connections
         config.timeoutIntervalForResource = 300.0 // Keep connection alive for 5 minutes
         config.httpMaximumConnectionsPerHost = 6 // Allow multiple connections to same host
         // URLSession automatically handles SSL session resumption and connection reuse
@@ -113,10 +113,10 @@ class OpenAIClient {
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(effectiveModel)\r\n".data(using: .utf8)!)
 
-        // Add temperature parameter (optional - set to 0 for deterministic results)
+        // Add temperature parameter (0.2 prevents repetition loops while maintaining accuracy)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".data(using: .utf8)!)
-        body.append("0\r\n".data(using: .utf8)!)
+        body.append("0.2\r\n".data(using: .utf8)!)
 
         // Add prompt parameter (optional)
         if let prompt = prompt, !prompt.isEmpty {

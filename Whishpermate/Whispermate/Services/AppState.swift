@@ -132,12 +132,15 @@ class AppState: ObservableObject {
         // Store previous app for pasting
         ClipboardManager.storePreviousApp()
 
+        // Звук старта — ДО начала записи, иначе микрофон пишет собственный сигнал.
+        // Восстановлено из 170677f (утеряно при синке с апстримом 10.04).
+        SoundFeedbackManager.shared.playRecordingStartSound()
+
         // Start audio recording
         audioRecorder.startRecording()
 
         if audioRecorder.isRecording {
             DebugLog.info("✅ Recording started successfully", context: "AppState")
-            SoundFeedbackManager.shared.playRecordingStartSound()
             if overlayManager.isOverlayMode {
                 let isCommand = (recordingMode == .command)
                 overlayManager.transition(to: .recording(isCommandMode: isCommand))

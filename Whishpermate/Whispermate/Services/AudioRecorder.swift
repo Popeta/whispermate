@@ -12,6 +12,10 @@ class AudioRecorder: NSObject, ObservableObject {
     @Published var frequencyBands: [Float] = Array(repeating: 0.0, count: 14) // Frequency spectrum data
 
     private var audioEngine: AVAudioEngine?
+    /// Наблюдатель смены аудиомаршрута (звонок в WhatsApp переключает микрофон).
+    /// Блочный `addObserver` возвращает токен — `removeObserver(self)` его НЕ снимает,
+    /// поэтому храним отдельно. Фикс восстановлен из 7804835 (утерян при синке 10.04).
+    private var routeChangeObserver: NSObjectProtocol?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private let volumeManager = AudioVolumeManager()
@@ -81,11 +85,20 @@ class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
+    /// Снять наблюдателя смены маршрута. Идемпотентно — можно звать сколько угодно раз.
+    private func removeRouteChangeObserver() {
+        if let observer = routeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            routeChangeObserver = nil
+        }
+    }
+
     private func setupAudioEngine() {
         DebugLog.info("🎙️ Setting up audio engine (persistent mode)", context: "AudioRecorder LOG")
 
         // Clean up existing engine if any
         if let engine = audioEngine {
+            removeRouteChangeObserver()
             if engine.isRunning {
                 engine.stop()
             }
@@ -168,6 +181,24 @@ class AudioRecorder: NSObject, ObservableObject {
 
             // Don't start the engine yet - only start when recording begins
             audioEngine = engine
+
+            // Смена аудиомаршрута (входящий звонок переключает микрофон/динамик)
+            // останавливает движок — без перезапуска запись молча зависает.
+            removeRouteChangeObserver()
+            routeChangeObserver = NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: engine,
+                queue: .main
+            ) { [weak self, weak engine] _ in
+                DebugLog.info("⚠️ Audio configuration changed (route switch detected), restarting engine", context: "AudioRecorder LOG")
+                guard self != nil, let engine, !engine.isRunning else { return }
+                do {
+                    try engine.start()
+                    DebugLog.info("✅ Audio engine restarted after route change", context: "AudioRecorder LOG")
+                } catch {
+                    DebugLog.info("❌ Failed to restart audio engine: \(error)", context: "AudioRecorder LOG")
+                }
+            }
 
             DebugLog.info("✅ Audio engine initialized (will start on recording)", context: "AudioRecorder LOG")
         } catch {
@@ -337,6 +368,7 @@ class AudioRecorder: NSObject, ObservableObject {
         NotificationCenter.default.removeObserver(self)
 
         // Stop engine and clean up
+        removeRouteChangeObserver()
         if let engine = audioEngine {
             if engine.isRunning {
                 engine.stop()
