@@ -2,6 +2,7 @@ import AVFoundation
 internal import Combine
 import FluidAudio
 import Foundation
+import WhisperMateShared
 
 /// On-device transcription service using NVIDIA Parakeet model via FluidAudio
 /// Provides private, offline, low-latency speech recognition on Apple Silicon
@@ -77,6 +78,10 @@ class ParakeetTranscriptionService: ObservableObject {
 
             DebugLog.info("Parakeet model ready", context: "ParakeetTranscriptionService")
 
+            // Словарь поднимаем отдельно и не блокируя готовность: не поднялся —
+            // диктовка работает как раньше, без бустинга.
+            Task { await Self.prepareVocabularyBoosting() }
+
         } catch {
             DebugLog.error("Failed to initialize Parakeet: \(error.localizedDescription)", context: "ParakeetTranscriptionService")
             await MainActor.run {
@@ -113,17 +118,66 @@ class ParakeetTranscriptionService: ObservableObject {
         do {
             DebugLog.info("Transcribing audio file via FluidAudio (URL-based, auto-resample)...", context: "ParakeetTranscriptionService")
 
-            // FluidAudio's transcribe(URL:source:) accepts any AVFoundation-compatible audio
-            // and handles resampling to 16kHz mono internally
-            let result = try await manager.transcribe(audioURL, source: .system)
+            // FluidAudio 0.15.x: состояние декодера держит вызывающая сторона.
+            // Каждая диктовка независима, поэтому состояние всегда свежее —
+            // иначе контекст предыдущей записи протекал бы в следующую.
+            var decoderState = TdtDecoderState.make()
+
+            // transcribe(_:decoderState:) принимает любой формат, понятный AVFoundation,
+            // и сам ресемплит в 16 кГц моно.
+            let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
 
             DebugLog.info("Transcription complete: \(result.text.prefix(100))...", context: "ParakeetTranscriptionService")
 
-            return result.text
+            return await boostVocabulary(in: result, audioURL: audioURL)
 
         } catch {
             DebugLog.error("Transcription failed: \(error.localizedDescription)", context: "ParakeetTranscriptionService")
             throw error
+        }
+    }
+
+    // MARK: - Vocabulary boosting
+
+    /// Собрать сессию бустинга под включённые записи словаря.
+    ///
+    /// Термин для бустинга — это то, что мы хотим видеть в тексте (`replacement`),
+    /// а то, что слышится вместо него (`trigger`), идёт алиасом.
+    static func prepareVocabularyBoosting() async {
+        let terms: [VocabularyBoostingService.Term] = await MainActor.run {
+            DictionaryManager.shared.entries
+                .filter { $0.isEnabled }
+                .map { entry in
+                    if let replacement = entry.replacement, !replacement.isEmpty {
+                        return VocabularyBoostingService.Term(
+                            text: replacement, aliases: [entry.trigger])
+                    }
+                    return VocabularyBoostingService.Term(text: entry.trigger)
+                }
+        }
+
+        await VocabularyBoostingService.shared.prepare(terms: terms)
+    }
+
+    /// Переписать распознанный текст по акустике, если словарь поднят.
+    ///
+    /// Рескореру нужно то же аудио в 16 кГц моно, по которому получен транскрипт,
+    /// и тайминги токенов на том же отсчёте времени.
+    private func boostVocabulary(in result: ASRResult, audioURL: URL) async -> String {
+        guard VocabularyBoostingService.isEnabled else { return result.text }
+        guard let tokenTimings = result.tokenTimings, !tokenTimings.isEmpty else {
+            return result.text
+        }
+
+        do {
+            let samples = try audioConverter.resampleAudioFile(audioURL)
+            return await VocabularyBoostingService.shared.rescore(
+                text: result.text, tokenTimings: tokenTimings, audioSamples: samples)
+        } catch {
+            DebugLog.error(
+                "Vocabulary boosting skipped, resample failed: \(error.localizedDescription)",
+                context: "ParakeetTranscriptionService")
+            return result.text
         }
     }
 
