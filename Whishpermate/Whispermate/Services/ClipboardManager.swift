@@ -31,7 +31,7 @@ class ClipboardManager {
             DebugLog.info("Restored original clipboard content", context: "ClipboardManager")
         }
         clipboardRestoreWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
     }
 
     static func copyAndPaste(_ text: String) {
@@ -140,8 +140,9 @@ class ClipboardManager {
             DebugLog.info("Paste may not work without accessibility access", context: "ClipboardManager")
         }
 
-        // Simulate Cmd+V keypress
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
+        // Simulate Cmd+V keypress. Keep Command physically down long enough for
+        // apps that ignore modifier flags on a too-fast synthetic V event.
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
             DebugLog.info("ERROR: Failed to create CGEventSource", context: "ClipboardManager")
             return
         }
@@ -182,21 +183,22 @@ class ClipboardManager {
         DebugLog.info("Events created successfully", context: "ClipboardManager")
         DebugLog.info("Posting events to system...", context: "ClipboardManager")
 
-        // Post events in sequence with small delays
+        // Post events in sequence with human-scale delays. A 1ms gap can be
+        // interpreted by some apps as a plain "v" instead of Cmd+V.
         let loc = CGEventTapLocation.cghidEventTap
 
         cmdDown.post(tap: loc)
         DebugLog.info("Posted: Cmd down", context: "ClipboardManager")
 
-        usleep(1000) // 1ms delay
+        usleep(50_000) // 50ms delay
         vDown.post(tap: loc)
         DebugLog.info("Posted: V down", context: "ClipboardManager")
 
-        usleep(1000) // 1ms delay
+        usleep(20_000) // 20ms delay
         vUp.post(tap: loc)
         DebugLog.info("Posted: V up", context: "ClipboardManager")
 
-        usleep(1000) // 1ms delay
+        usleep(50_000) // 50ms delay
         cmdUp.post(tap: loc)
         DebugLog.info("Posted: Cmd up", context: "ClipboardManager")
 
