@@ -124,6 +124,24 @@ Cloud-провайдеры (Groq/OpenAI/Custom) используют `temperatur
 - **НЕ собирать DMG/tag** без явного запроса
 - **Коммитить периодически** по ходу работы
 
+### 🚨 Автообновление отключено намеренно (07.09.2026)
+
+**`SUFeedURL` удалён из `Whishpermate/Whispermate/Info.plist` — НЕ возвращать.**
+
+Ключ указывал на appcast **апстрима** (`writingmate/aidictation`), при этом
+`SUPublicEDKey` не задан нигде, а в appcast нет ни одной `edSignature` — то есть
+Sparkle ставил бы обновление **без проверки подписи**, из чужого репозитория, в
+приложение с микрофоном, Accessibility, Input Monitoring и PostEvent.
+
+Без ключа `configureSparkle()` (`Services/UpdateManager.swift`) уходит в
+guard-else: апдейтер не инициализируется, `isInAppUpdatesEnabled=false`, кнопка
+проверки просто открывает страницу релизов в браузере. Это рабочее поведение.
+
+🚨 **При синке с апстримом ключ вернётся** — после каждого merge проверять:
+`grep -c SUFeedURL Whishpermate/Whispermate/Info.plist` должно давать `0`.
+Возвращать автообновление можно только вместе с `SUPublicEDKey` и подписанным
+appcast в СВОЁМ репозитории.
+
 ### Release build требования
 - Hardened runtime: YES
 - **НЕ включать** entitlement `get-task-allow`
