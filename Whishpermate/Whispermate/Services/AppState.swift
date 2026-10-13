@@ -395,6 +395,12 @@ class AppState: ObservableObject {
                     return
                 }
 
+                // Копия уже лежит в постоянном хранилище — временный файл больше не нужен.
+                // Удаляем ТОЛЬКО после успешного копирования, история при этом не страдает.
+                // Без этого каждая диктовка навсегда оседала второй копией в $TMPDIR
+                // (на 07.09.2026 там накопилось 420 файлов с 04.09).
+                try? FileManager.default.removeItem(at: audioURL)
+
                 var recording = Recording(
                     audioFileURL: persistentURL,
                     transcription: result,
@@ -435,6 +441,9 @@ class AppState: ObservableObject {
                 let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
 
                 if let persistentURL = historyManager.copyAudioToPersistentStorage(from: audioURL) {
+                    // Копия сохранена — временный файл можно убрать (см. комментарий выше).
+                    try? FileManager.default.removeItem(at: audioURL)
+
                     let recording = Recording(
                         audioFileURL: persistentURL,
                         transcription: nil,

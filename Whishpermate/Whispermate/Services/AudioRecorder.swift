@@ -190,8 +190,14 @@ class AudioRecorder: NSObject, ObservableObject {
                 object: engine,
                 queue: .main
             ) { [weak self, weak engine] _ in
-                DebugLog.info("⚠️ Audio configuration changed (route switch detected), restarting engine", context: "AudioRecorder LOG")
-                guard self != nil, let engine, !engine.isRunning else { return }
+                DebugLog.info("⚠️ Audio configuration changed (route switch detected)", context: "AudioRecorder LOG")
+                // Перезапускать движок только если запись реально идёт.
+                // Без проверки isRecording любая смена аудиомаршрута (сон/пробуждение, наушники,
+                // BT, смена устройства по умолчанию) открывала микрофон в состоянии .idle — и он
+                // оставался открытым до перезапуска приложения, потому что stopRecording()
+                // выходит по guard recordingState != .recording и до engine.stop() не доходит.
+                // Инцидент 07.09.2026: микрофон удерживался ~5 часов за ночь.
+                guard let self, self.isRecording, let engine, !engine.isRunning else { return }
                 do {
                     try engine.start()
                     DebugLog.info("✅ Audio engine restarted after route change", context: "AudioRecorder LOG")
