@@ -304,4 +304,4 @@ Parakeet провайдеру **API ключ не нужен** — модель 
 
 **Sparkle auto-update:** оставлен, но **может в будущем затереть наши изменения** при автообновлении. При необходимости отключить auto-check в `WhispermateApp.swift` или `UpdateManager.swift`.
 
-**Backup до синхронизации с upstream:** ветка `backup/pre-upstream-sync-2026-04-10` и тег `backup-170677f` на GitHub fork.
+**Backup до синхронизации с upstream:** тег `backup-170677f` на GitHub fork (ветка `backup/pre-upstream-sync-2026-04-10` удалена 13.10.2026 — тот же коммит).
