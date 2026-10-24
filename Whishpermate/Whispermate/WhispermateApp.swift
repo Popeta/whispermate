@@ -83,6 +83,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDockMenu(_: NSApplication) -> NSMenu? {
         let dockMenu = NSMenu()
+        dockMenu.autoenablesItems = false
+
+        // Copy last transcription menu item
+        let copyItem = NSMenuItem(
+            title: "Скопировать последнюю фразу",
+            action: #selector(copyLastTranscription),
+            keyEquivalent: ""
+        )
+        copyItem.target = self
+        copyItem.isEnabled = lastTranscription() != nil
+        dockMenu.addItem(copyItem)
 
         // Settings menu item
         let settingsItem = NSMenuItem(
@@ -133,6 +144,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openSettings() {
         showMainSettingsWindow()
+    }
+
+    private func lastTranscription() -> String? {
+        guard let text = HistoryManager.shared.recordings.first?.transcription,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
+    @objc private func copyLastTranscription() {
+        guard let text = lastTranscription() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     func configureMainWindow() {
